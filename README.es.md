@@ -54,11 +54,14 @@ Un solo ajuste para toda la Raspberry: **`LANGUAGE` en `config.py`** (`"fr"`, `"
 
 - el **anuncio de voz**:
 
-  | Idioma | Anuncio |
-  |---|---|
-  | `fr` | «Hé mamie, c'est *nombre* qui t'appelle» |
-  | `en` | «Hey grandma, it's *nombre* calling» |
-  | `es` | «Oye abuela, es *nombre* quien te llama» |
+  | Idioma | Anuncio (con `GREETING_NAME = "abuela"`) | Sin saludo (`None`) |
+  |---|---|---|
+  | `fr` | «Hé abuela, c'est *nombre* qui t'appelle» | «C'est *nombre* qui t'appelle» |
+  | `en` | «Hey abuela, it's *nombre* calling» | «It's *nombre* calling» |
+  | `es` | «Oye abuela, es *nombre* quien te llama» | «Es *nombre* quien te llama» |
+
+  El saludo (`GREETING_NAME`: abuela, abuelo, mamá, papá, un nombre…) lo pregunta
+  `install.sh` en la primera instalación (opción `--greeting`);
 
 - los mensajes del agente destinados al usuario y los de `setup_identity.py` (incluido el
   contenido de `setup_qr_code.txt`);
@@ -100,27 +103,47 @@ La cámara **no** la gestiona Python: la activa `receveur.html` en el momento de
 1. **Tarjeta SD**: con [Raspberry Pi Imager](https://www.raspberrypi.com/software/), escribir
    **Raspberry Pi OS con escritorio** (64 bits). En los ajustes de Imager: nombre de usuario y
    contraseña (a elegir), Wi-Fi, **SSH activado** y, si se quiere, un nombre de equipo.
-2. **Copiar esta carpeta** `Raspberry_receiver` en la Raspberry, desde un PC:
+2. **Descargar el proyecto** en la Raspberry (por SSH, con el usuario de la Raspberry),
+   eligiendo una versión publicada (lista: «Releases» / «Tags» del repositorio):
    ```bash
-   scp -r Raspberry_receiver USUARIO@IP_DE_LA_PI:~/
+   git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
+   cd ~/AppelerMamie-src
+   git checkout v0.1.0        # la última versión
    ```
-3. **Ejecutar el script** por SSH, con el usuario de la Raspberry (no con `sudo`):
+   (`sudo apt install -y git` si falta git.) Esta carpeta solo contiene el proyecto
+   descargado: el script instala los programas en `~/AppelerMamie`.
+3. **Ejecutar el script**, con el usuario de la Raspberry (no con `sudo`):
    ```bash
-   cd ~/Raspberry_receiver
    bash install.sh            # pregunta el idioma (fr / en / es)
    bash install.sh --lang es  # o sin pregunta
    ```
+   En la primera instalación, también pregunta cómo el anuncio de voz llama a la persona
+   («Oye abuela, es Paul quien te llama», o «papá», un nombre, o nada).
 
-El script hace todo lo que detallan los pasos 1 a 8 siguientes: paquetes del sistema, entorno
-Python, conversión del tono, idioma, permisos del usuario (ratón, TV, sonido), identidad del
-dispositivo, servicios de arranque automático (agente y Chromium), inicio de sesión automático
-en el escritorio, pantalla sin reposo, cámara y micrófono permitidos en Chromium. Al final
-muestra **el identificador y el código QR** que el administrador del servidor debe autorizar
-(paso 6) y propone reiniciar.
+El script lo hace todo, no hay nada más que instalar ni copiar:
 
-Se puede **volver a ejecutar en cualquier momento para actualizar** la Raspberry: la identidad
-(`identity.json`) y los ajustes de `config.py` se conservan (se guarda una copia del
-`config.py` anterior). Se escribe un registro en `~/appelermamie-install.log`.
+- instala los **paquetes del sistema** (ffmpeg, cec-utils, Chromium…) y el **entorno
+  Python**;
+- **copia los programas** en `~/AppelerMamie` y convierte el tono;
+- configura el idioma, los permisos del usuario (ratón, TV, sonido), crea la **identidad** del
+  dispositivo;
+- instala y **arranca** los servicios (agente, Chromium en la TV, reparación automática), el
+  inicio de sesión automático en el escritorio, la pantalla sin reposo, la cámara y el
+  micrófono permitidos en Chromium.
+
+Al final muestra **el identificador y el código de verificación** que el administrador del
+servidor debe autorizar (paso 6) y propone reiniciar.
+
+**Actualizar** a una versión más reciente: la identidad (`identity.json`) y los ajustes de
+`config.py` se conservan (se guarda una copia del `config.py` anterior). Se escribe un
+registro en `~/appelermamie-install.log`.
+
+```bash
+cd ~/AppelerMamie-src
+git fetch --tags
+git checkout v0.2.0          # la nueva versión
+bash install.sh
+```
 
 ### Instalación manual (paso a paso)
 
@@ -203,6 +226,7 @@ solos, sin reiniciar. El servidor guarda entonces el secreto del dispositivo.
 | Ajuste | Valor actual | Qué revisar |
 |---|---|---|
 | `LANGUAGE` | `fr` | Idioma de la Raspberry (`fr`, `en`, `es`) |
+| `GREETING_NAME` | preguntado por `install.sh` | Cómo el anuncio llama a la persona («abuela», «papá», un nombre…); `None` = sin saludo |
 | `SERVER_URL` | `wss://appelermami.fr` | Dirección de tu servidor |
 | `MOUSE_DEVICE` | `None` (detección automática) | Solo hay que indicarlo para imponer un dispositivo concreto (varios ratones conectados): ruta estable de `ls -l /dev/input/by-id/` |
 | `AUDIO_DEVICE` | `None` (detección automática) | Altavoz del tono: el primer altavoz USB encontrado. Solo hay que indicarlo para imponer una tarjeta concreta (nombre entre corchetes en `aplay -l`) |
@@ -260,7 +284,7 @@ personal falsa), **sin Raspberry**: archivos del sistema, comandos, TV y red est
 Se ejecutan en un PC (Linux, o Windows con Git Bash) y `install.sh` no los copia en la Pi.
 
 ```bash
-cd Raspberry_receiver
+cd Raspberry_receiver   # la carpeta del proyecto (clon de CallTV-Raspberry)
 pip install "websockets>=13,<18"
 python3 tests/run_tests.py            # todas las pruebas
 python3 tests/run_tests.py selfheal   # solo los archivos cuyo nombre contiene «selfheal»

@@ -5,12 +5,15 @@
 # Installs (or updates) the Raspberry receiver in one command.
 #
 # Before: Raspberry Pi OS **with desktop** written with Raspberry Pi Imager
-# (user, Wi-Fi and SSH set in the Imager settings), then this folder
-# (Raspberry_receiver) copied to the Raspberry.
+# (user, Wi-Fi and SSH set in the Imager settings), then the project downloaded
+# on the Raspberry: git clone https://github.com/jgilles63/CallTV-Raspberry.git
+# ~/AppelerMamie-src (or this folder, Raspberry_receiver, copied there).
 #
 # Usage, as the Raspberry user (NOT with sudo):
 #   bash install.sh             # asks the language (fr / en / es)
 #   bash install.sh --lang es   # without the question
+#   bash install.sh --lang es --greeting abuela   # greeting of the announcement
+#                               # ("" = none), asked at the first installation
 #
 # It can be run again at any time to update a Raspberry: the identity
 # (identity.json) and the settings of config.py are kept.
@@ -36,6 +39,8 @@ TOTAL_STEPS=10
 STEP=0
 STEP_NAME=""
 LANG_CHOICE=""
+GREETING_CHOICE=""
+GREETING_SET=""
 
 # ---------------------------------------------------------
 # Options
@@ -44,7 +49,9 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --lang) LANG_CHOICE="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
     --lang=*) LANG_CHOICE="${1#--lang=}"; shift ;;
-    -h|--help) sed -n '5,17p' "$0"; exit 0 ;;
+    --greeting) GREETING_CHOICE="${2-}"; GREETING_SET=1; shift; [ $# -gt 0 ] && shift ;;
+    --greeting=*) GREETING_CHOICE="${1#--greeting=}"; GREETING_SET=1; shift ;;
+    -h|--help) sed -n '5,20p' "$0"; exit 0 ;;
     *) echo "❌ Unknown option: $1 (see --help)" >&2; exit 1 ;;
   esac
 done
@@ -53,9 +60,9 @@ done
 for f in main.py config.py i18n.py ColdStart/setup_identity.py ColdStart/tv-control.service ColdStart/chromium-autolaunch.service; do
   if [ ! -f "$SRC_DIR/$f" ]; then
     echo "❌ $f ?" >&2
-    echo "   Lancez ce script depuis le dossier Raspberry_receiver copié sur le Raspberry." >&2
-    echo "   Run this script from the Raspberry_receiver folder copied to the Raspberry." >&2
-    echo "   Ejecuta este script desde la carpeta Raspberry_receiver copiada en la Raspberry." >&2
+    echo "   Lancez ce script depuis le dossier du projet (clone de CallTV-Raspberry ou Raspberry_receiver)." >&2
+    echo "   Run this script from the project folder (clone of CallTV-Raspberry or Raspberry_receiver)." >&2
+    echo "   Ejecuta este script desde la carpeta del proyecto (clon de CallTV-Raspberry o Raspberry_receiver)." >&2
     exit 1
   fi
 done
@@ -124,6 +131,16 @@ esac
 if [ "$(id -u)" -eq 0 ]; then
   msg install.noRoot >&2
   exit 1
+fi
+
+# Greeting of the voice announcement ("Hey grandma, ..."): asked at the first
+# installation only (an update keeps the value of config.py)
+if [ -z "$GREETING_SET" ] && [ ! -f "$APP_DIR/config.py" ]; then
+  # (question printed apart: read -p shows nothing when the answers come from a pipe)
+  printf '%s' "$(msg install.askGreeting)"
+  read -r GREETING_CHOICE || true
+  echo
+  GREETING_SET=1
 fi
 
 # Everything is also written to the log file
@@ -200,19 +217,23 @@ sed -i 's/\r$//' "$APP_DIR"/*.py "$APP_DIR"/*.sh
 chmod +x "$APP_DIR"/*.sh
 
 # New config.py = the one of the project + the values of the previous one +
-# the chosen language, prepared in a temporary file then moved in one go.
-# A MOUSE_DEVICE such as /dev/input/event4 changes with the USB port: it is
-# replaced by the automatic detection.
+# the chosen language and greeting, prepared in a temporary file then moved in
+# one go. A MOUSE_DEVICE such as /dev/input/event4 changes with the USB port:
+# it is replaced by the automatic detection. An older config.py without
+# GREETING_NAME keeps the announcement it had ("Hey grandma, ...").
 new_config="$APP_DIR/.config.py.new"
 sed 's/\r$//' "$SRC_DIR/config.py" > "$new_config"
-mouse_reset="$("$PYTHON" - "$new_config" "$old_config" "$LANG_CHOICE" <<'PY'
+config_notes="$("$PYTHON" - "$new_config" "$old_config" "$LANG_CHOICE" "$GREETING_SET" "$GREETING_CHOICE" <<'PY'
 import re
 import sys
 
-new_path, old_path, lang = sys.argv[1:4]
+new_path, old_path, lang, greeting_set, greeting = sys.argv[1:6]
 KEPT = ("SERVER_URL", "UNAUTHORIZED_RETRY_DELAY", "MOUSE_DEVICE", "MOUSE_RETRY_DELAY",
         "HDMI_PORT", "AUDIO_DEVICE", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
-        "MAX_CALLER_NAME_LENGTH", "VOICE_VOLUME", "RINGTONE_VOLUME", "NIGHTLY_REBOOT_HOUR")
+        "MAX_CALLER_NAME_LENGTH", "VOICE_VOLUME", "RINGTONE_VOLUME", "NIGHTLY_REBOOT_HOUR",
+        "GREETING_NAME")
+# Greeting of the announcement before GREETING_NAME existed
+FORMER_GREETING = {"fr": "mamie", "en": "grandma", "es": "abuela"}
 
 
 def setting(key, text):
@@ -231,9 +252,24 @@ if old_path:
         if not old_line or not new_line or old_line == new_line:
             continue
         if key == "MOUSE_DEVICE" and re.search(r'"/dev/input/event\d+"', old_line):
-            print(old_line.split("=", 1)[1].strip())
+            print("mouse=" + old_line.split("=", 1)[1].strip())
             continue
         new = new.replace(new_line, old_line, 1)
+
+
+def set_greeting(value):
+    global new
+    clean = "".join(c for c in value.strip()[:30] if c.isalnum() or c in " -'").strip()
+    line = f'GREETING_NAME = "{clean}"' if clean else "GREETING_NAME = None"
+    new = re.sub(r"^GREETING_NAME *=.*$", line, new, count=1, flags=re.M)
+
+
+if greeting_set:
+    set_greeting(greeting)
+    print("greeting=set")
+elif old_path and not setting("GREETING_NAME", old):
+    set_greeting(FORMER_GREETING[lang])
+    print("greeting=kept")
 
 new = re.sub(r"^LANGUAGE *=.*$", f'LANGUAGE = "{lang}"', new, count=1, flags=re.M)
 
@@ -245,8 +281,23 @@ mv "$new_config" "$APP_DIR/config.py"
 if [ -n "$old_config" ]; then
   msg install.configKept backup="$old_config"
 fi
+mouse_reset="$(sed -n 's/^mouse=//p' <<< "$config_notes")"
 if [ -n "$mouse_reset" ]; then
   msg install.mouseReset old="$mouse_reset"
+fi
+greeting_note="$(sed -n 's/^greeting=//p' <<< "$config_notes")"
+if [ -n "$greeting_note" ]; then
+  greeting="$(sed -n 's/^GREETING_NAME *= *"\(.*\)".*/\1/p' "$APP_DIR/config.py" | head -1)"
+  if [ -n "$greeting" ]; then
+    phrase="$(msg tts.phrase name=Paul greeting="$greeting")"
+  else
+    phrase="$(msg tts.phraseNoGreeting name=Paul)"
+  fi
+  if [ "$greeting_note" = kept ]; then
+    msg install.greetingKept phrase="$phrase"
+  else
+    msg install.greeting phrase="$phrase"
+  fi
 fi
 
 # ---------------------------------------------------------

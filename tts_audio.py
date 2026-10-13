@@ -6,8 +6,9 @@
 """
 Text-to-speech (TTS) and playback of the call sound.
 
-  - Generates a spoken sentence (e.g. "Hey grandma, it's XXX calling")
-    with gTTS (Google Text-to-Speech), in the language set in config.py.
+  - Generates a spoken sentence (e.g. "Hey grandma, it's XXX calling", the
+    greeting being config.GREETING_NAME) with gTTS (Google Text-to-Speech), in
+    the language set in config.py.
   - Mixes this voice with the background ringtone using ffmpeg
     (voice and ringtone looped over the whole call duration).
   - Caches the final result (one file per caller name and language).
@@ -120,6 +121,26 @@ def set_max_volume(card):
     print(f"⚠️ Could not set the volume of '{card['id']}' (no {'/'.join(VOLUME_CONTROLS)} control)")
 
 
+def clean_greeting():
+    """
+    Greeting of the announcement (config.GREETING_NAME), cleaned like a
+    caller name; "" if there is none.
+    """
+    greeting = getattr(config, "GREETING_NAME", None)
+    if not greeting or not isinstance(greeting, str):
+        return ""
+    greeting = greeting.strip()[:config.MAX_CALLER_NAME_LENGTH]
+    return "".join(c for c in greeting if c.isalnum() or c in " -'").strip()
+
+
+def call_phrase(display_name):
+    """Sentence of the announcement, with or without greeting."""
+    greeting = clean_greeting()
+    if greeting:
+        return t("tts.phrase", name=display_name, greeting=greeting)
+    return t("tts.phraseNoGreeting", name=display_name)
+
+
 def clean_name_for_tts(name):
     """
     Cleans the caller name so it can be spoken, without special
@@ -208,10 +229,11 @@ def generate_call_wav(caller_name):
     lang = language()
     display_name = clean_name_for_tts(caller_name)
     file_key = safe_filename_from_name(caller_name)
+    greeting_key = clean_greeting().lower().replace(" ", "").replace("-", "").replace("'", "") or "none"
 
-    # The language is part of the file name: changing LANGUAGE must not
-    # replay an announcement cached in the previous language.
-    final_wav = config.CACHE_DIR / f"call_{lang}_{file_key}.wav"
+    # The language and the greeting are part of the file name: changing
+    # LANGUAGE or GREETING_NAME must not replay an older announcement.
+    final_wav = config.CACHE_DIR / f"call_{lang}_{greeting_key}_{file_key}.wav"
 
     # --- Cache: already generated for this name, reuse it directly ---
     if final_wav.exists():
@@ -226,7 +248,7 @@ def generate_call_wav(caller_name):
 
     prune_audio_cache()
 
-    phrase = t("tts.phrase", name=display_name)
+    phrase = call_phrase(display_name)
 
     voice_mp3 = config.CACHE_DIR / f"voice_{lang}_{file_key}.mp3"
     voice_wav = config.CACHE_DIR / f"voice_{lang}_{file_key}.wav"

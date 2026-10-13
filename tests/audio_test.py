@@ -224,5 +224,44 @@ ring()
 check("RINGTONE_PATH file present: that ringtone is used",
       played_files == [str(P / "cache" / "ringtone_my-ringtone_30s.wav")], played_files)
 
+# 16. Greeting of the announcement (GREETING_NAME)
+cfg.GREETING_NAME = "mamie"
+check("greeting set: \"Hé mamie, c'est Paul qui t'appelle\"",
+      tts_audio.call_phrase("Paul") == "Hé mamie, c'est Paul qui t'appelle", tts_audio.call_phrase("Paul"))
+cfg.GREETING_NAME = "papi et mamie"
+check("greeting of several words", tts_audio.call_phrase("Paul") == "Hé papi et mamie, c'est Paul qui t'appelle")
+for value in (None, "", "   ", 3):
+    cfg.GREETING_NAME = value
+    check(f"no greeting ({value!r}): \"C'est Paul qui t'appelle\"", tts_audio.call_phrase("Paul") == "C'est Paul qui t'appelle")
+del cfg.GREETING_NAME
+check("older config.py without GREETING_NAME: no greeting, no crash", tts_audio.call_phrase("Paul") == "C'est Paul qui t'appelle")
+cfg.GREETING_NAME = 'Ma{m}ie "<x>"'
+check("greeting cleaned (no braces, quotes...)", tts_audio.call_phrase("Paul") == "Hé Mamie x, c'est Paul qui t'appelle", tts_audio.call_phrase("Paul"))
+
+
+# 17. The cached announcement depends on the greeting (no old sentence replayed)
+class FakeTTS:
+    def __init__(self, text, lang):
+        self.text = text
+
+    def save(self, path):
+        spoken.append(self.text)
+        Path(path).write_bytes(b"mp3")
+
+
+spoken = []
+tts_audio.gTTS = FakeTTS
+cfg.GREETING_NAME = "mamie"
+first = tts_audio.generate_call_wav("Paul")
+cfg.GREETING_NAME = "papa"
+second = tts_audio.generate_call_wav("Paul")
+check("other greeting: another cached file, new sentence spoken",
+      first != second and spoken == ["Hé mamie, c'est Paul qui t'appelle", "Hé papa, c'est Paul qui t'appelle"], (first, second, spoken))
+check("cache names: language, greeting, caller",
+      first.endswith("call_fr_mamie_paul.wav") and second.endswith("call_fr_papa_paul.wav"))
+cfg.GREETING_NAME = None
+check("without greeting: its own cached file", tts_audio.generate_call_wav("Paul").endswith("call_fr_none_paul.wav"))
+tts_audio.gTTS = None
+
 print(f"\n{sum(results)} passed, {len(results) - sum(results)} failed")
 sys.exit(0 if all(results) else 1)

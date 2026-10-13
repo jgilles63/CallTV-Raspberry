@@ -18,7 +18,8 @@ SUPPORTED_LANGUAGES = ("fr", "en", "es")
 MESSAGES = {
     "fr": {
         # --- Voice announcement ---
-        "tts.phrase": "Hé mamie, c'est {name} qui t'appelle",
+        "tts.phrase": "Hé {greeting}, c'est {name} qui t'appelle",
+        "tts.phraseNoGreeting": "C'est {name} qui t'appelle",
         "tts.someone": "quelqu'un",
 
         # --- Agent: refusal by the server ---
@@ -205,6 +206,9 @@ Ne le transmettez à personne : il ne quitte jamais ce Raspberry.
      appliqués qu'après un redémarrage)
 """,
         "install.askReboot": "Redémarrer maintenant ? (o/n) : ",
+        "install.askGreeting": "\n🔊 L'annonce d'un appel dira par exemple « Hé mamie, c'est Paul qui t'appelle ».\n   Comment appeler la personne ? (mamie, papi, maman, papa, son prénom...)\n   Entrée = sans : « C'est Paul qui t'appelle » : ",
+        "install.greeting": "🔊 Annonce d'un appel : « {phrase} » (GREETING_NAME dans config.py pour la changer)",
+        "install.greetingKept": "🔊 Annonce d'un appel inchangée : « {phrase} » (GREETING_NAME ajouté dans config.py)",
         "install.rebooting": "🔄 Redémarrage...",
         "install.restarted": "✅ Services redémarrés. Pensez à redémarrer plus tard (sudo reboot).",
         "switch.noRoot": "❌ Ne lancez pas ce script avec sudo : lancez-le avec l'utilisateur du Raspberry.",
@@ -222,7 +226,8 @@ Ne le transmettez à personne : il ne quitte jamais ce Raspberry.
 
     "en": {
         # --- Voice announcement ---
-        "tts.phrase": "Hey grandma, it's {name} calling",
+        "tts.phrase": "Hey {greeting}, it's {name} calling",
+        "tts.phraseNoGreeting": "It's {name} calling",
         "tts.someone": "someone",
 
         # --- Agent: refusal by the server ---
@@ -408,6 +413,9 @@ Never share it: it never leaves this Raspberry.
      only apply after a reboot)
 """,
         "install.askReboot": "Reboot now? (y/n): ",
+        "install.askGreeting": "\n🔊 A call will be announced, for example: \"Hey grandma, it's Paul calling\".\n   How should the person be called? (grandma, grandpa, mum, dad, their first name...)\n   Enter = none: \"It's Paul calling\": ",
+        "install.greeting": "🔊 Call announcement: \"{phrase}\" (GREETING_NAME in config.py to change it)",
+        "install.greetingKept": "🔊 Call announcement unchanged: \"{phrase}\" (GREETING_NAME added to config.py)",
         "install.rebooting": "🔄 Rebooting...",
         "install.restarted": "✅ Services restarted. Remember to reboot later (sudo reboot).",
         "switch.noRoot": "❌ Do not run this script with sudo: run it as the Raspberry user.",
@@ -425,7 +433,8 @@ Never share it: it never leaves this Raspberry.
 
     "es": {
         # --- Voice announcement ---
-        "tts.phrase": "Oye abuela, es {name} quien te llama",
+        "tts.phrase": "Oye {greeting}, es {name} quien te llama",
+        "tts.phraseNoGreeting": "Es {name} quien te llama",
         "tts.someone": "alguien",
 
         # --- Agent: refusal by the server ---
@@ -611,6 +620,9 @@ No lo compartas con nadie: nunca sale de esta Raspberry.
      aplican después de reiniciar)
 """,
         "install.askReboot": "¿Reiniciar ahora? (s/n): ",
+        "install.askGreeting": "\n🔊 Una llamada se anunciará, por ejemplo: «Oye abuela, es Paul quien te llama».\n   ¿Cómo llamar a la persona? (abuela, abuelo, mamá, papá, su nombre...)\n   Intro = sin: «Es Paul quien te llama»: ",
+        "install.greeting": "🔊 Anuncio de una llamada: «{phrase}» (GREETING_NAME en config.py para cambiarlo)",
+        "install.greetingKept": "🔊 Anuncio de una llamada sin cambios: «{phrase}» (GREETING_NAME añadido en config.py)",
         "install.rebooting": "🔄 Reiniciando...",
         "install.restarted": "✅ Servicios reiniciados. Recuerda reiniciar más tarde (sudo reboot).",
         "switch.noRoot": "❌ No ejecutes este script con sudo: ejecútalo con el usuario de la Raspberry.",

@@ -80,8 +80,10 @@ make_stubs
 
 echo "=== 1. First installation (--lang es, no restart)"
 fresh
-run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+run 'abuela\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 check "the script ends without error" '[ "$(cat $T/rc.txt)" = 0 ]'
+check "greeting of the announcement asked at the first installation" 'grep -q "Cómo llamar a la persona" $T/out.txt'
+check "greeting saved in config.py and the announcement shown" 'grep -q "^GREETING_NAME = \"abuela\"$" $APP/config.py && grep -q "«Oye abuela, es Paul quien te llama»" $T/out.txt'
 check "messages in Spanish" 'grep -q "INSTALACIÓN DE LLAMAR A LA ABUELA" $T/out.txt && grep -q "\[10/10\] Pantalla" $T/out.txt'
 check "files copied flat (agent, ColdStart, Chromium script)" '[ -f $APP/main.py ] && [ -f $APP/setup_identity.py ] && [ -x $APP/launch_chromium.sh ] && [ -f $APP/identity_manager.py ]'
 check "tests not copied to the Pi" '[ ! -e $APP/tests ] && [ ! -e $APP/run_tests.py ]'
@@ -124,6 +126,7 @@ run '\ns\n' "$T/src/Raspberry_receiver/install.sh"
 check "the script ends without error" '[ "$(cat $T/rc.txt)" = 0 ]'
 check "without --lang: language of the Pi kept by default (es)" 'grep -q "INSTALACIÓN" $T/out.txt && grep -q "^LANGUAGE = \"es\"" $APP/config.py'
 check "same identity kept" 'grep -q "$ID1" $APP/identity.json && grep -q "Identidad existente conservada: $ID1" $T/out.txt'
+check "update: greeting kept, not asked again" 'grep -q "^GREETING_NAME = \"abuela\"$" $APP/config.py && ! grep -q "Cómo llamar a la persona" $T/out.txt'
 check "custom HDMI_PORT (2) kept" 'grep -q "^HDMI_PORT = 2$" $APP/config.py'
 check "ringtone of one's own: RINGTONE_PATH kept, its .mp3 converted" 'grep -q "^RINGTONE_PATH = str(BASE_DIR / \"my-ringtone.wav\")" $APP/config.py && [ -f $APP/my-ringtone.wav ]'
 check "custom NIGHTLY_REBOOT_HOUR (None) kept" 'grep -q "^NIGHTLY_REBOOT_HOUR = None$" $APP/config.py'
@@ -147,19 +150,20 @@ echo "=== 4. Script run alone, without the project files"
 fresh
 mkdir -p "$T/src/alone"; cp "$T/src/Raspberry_receiver/install.sh" "$T/src/alone/"
 run '' "$T/src/alone/install.sh"
-check "refused with a message in 3 languages" '[ "$(cat $T/rc.txt)" != 0 ] && grep -q "Run this script from the Raspberry_receiver folder" $T/out.txt'
+check "refused with a message in 3 languages" '[ "$(cat $T/rc.txt)" != 0 ] && grep -q "Run this script from the project folder" $T/out.txt'
 
 echo "=== 5. Files copied from Windows (CRLF line endings)"
 fresh
 sed -i 's/$/\r/' "$T/src/Raspberry_receiver/main.py" "$T/src/Raspberry_receiver/ColdStart/launch_chromium.sh"
-run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang en
+run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang en
+check "no greeting (Enter): GREETING_NAME = None, announcement without greeting" 'grep -q "^GREETING_NAME = None$" $APP/config.py && grep -q "\"It.s Paul calling\"" $T/out.txt'
 check "installed, line endings fixed" '[ "$(cat $T/rc.txt)" = 0 ] && ! grep -q $'"'"'\r'"'"' $APP/main.py $APP/launch_chromium.sh'
 check "messages in English" 'grep -q "INSTALLING CALL GRANDMA" $T/out.txt'
 
 echo "=== 5b. System without NetworkManager nor /boot/firmware/config.txt"
 fresh
 rm -rf "$T/root/etc/NetworkManager" "$T/root/boot"
-run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang fr
+run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang fr
 check "installed without error, these settings simply skipped" '[ "$(cat $T/rc.txt)" = 0 ] && [ ! -e $T/root/etc/NetworkManager ] && [ ! -e $T/root/boot ] && grep -q "\[10/10\]" $T/out.txt'
 
 echo "=== 6. A step fails (apt error)"
@@ -177,7 +181,7 @@ check "installed without error in the same folder" '[ "$(cat $T/rc.txt)" = 0 ] &
 
 echo "=== 8. File owned by another user (not writable)"
 fresh
-run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 chmod 444 "$APP/launch_chromium.sh"
 : > $T/calls.log
 run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang es
@@ -185,7 +189,7 @@ check "rights repaired with sudo, then installation finished" '[ "$(cat $T/rc.tx
 
 echo "=== 9. Installation stopped while copying: config.py intact"
 fresh
-run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 rm -f "$APP/start_tv_control.sh"; mkdir "$APP/start_tv_control.sh"
 run '' "$T/src/Raspberry_receiver/install.sh"
 check "stops while copying the files" '[ "$(cat $T/rc.txt)" != 0 ] && grep -q "Fallo durante el paso «Archivos" $T/out.txt'
@@ -196,10 +200,17 @@ check "run again without --lang: takes es again and finishes" '[ "$(cat $T/rc.tx
 
 echo "=== 10. Old config.py without HDMI_PORT (previous version)"
 fresh
-run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang es
-sed -i -e '/^HDMI_PORT = /d' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' $APP/config.py
+run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+sed -i -e '/^HDMI_PORT = /d' -e '/^GREETING_NAME = /d' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' $APP/config.py
 run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 check "update: HDMI_PORT = 3 added, other settings kept" '[ "$(cat $T/rc.txt)" = 0 ] && [ "$(grep -c "^HDMI_PORT = 3$" $APP/config.py)" = 1 ] && grep -q "^AUDIO_DEVICE = \"AUDIO\"" $APP/config.py'
+check "older config.py without GREETING_NAME: former announcement kept (abuela), not asked" 'grep -q "^GREETING_NAME = \"abuela\"$" $APP/config.py && grep -q "sin cambios: «Oye abuela" $T/out.txt && ! grep -q "Cómo llamar a la persona" $T/out.txt'
+
+echo "=== 11. --greeting option: changes the greeting, cleaned"
+run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang fr --greeting 'papi "Jo"; rm -rf ~'
+check "greeting changed, quotes and symbols removed, config.py still valid" '[ "$(cat $T/rc.txt)" = 0 ] && grep -q "^GREETING_NAME = \"papi Jo rm -rf\"$" $APP/config.py && "$REALPY" -c "import ast,sys; ast.parse(open(sys.argv[1], encoding=\"utf-8\").read())" "$(native $APP/config.py)"'
+run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang fr --greeting ""
+check "--greeting \"\": announcement without greeting" 'grep -q "^GREETING_NAME = None$" $APP/config.py && grep -q "« C.est Paul qui t.appelle »" $T/out.txt'
 
 echo
 echo "$pass passed, $fail failed"

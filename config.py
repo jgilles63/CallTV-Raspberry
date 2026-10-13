@@ -17,6 +17,12 @@ from pathlib import Path
 # launch_chromium.sh).
 LANGUAGE = "fr"
 
+# --- How the voice announcement greets the person called ---
+# e.g. "mamie", "papi", "maman", "papa" or a first name: "Hé mamie, c'est Paul
+# qui t'appelle". None = without greeting: "C'est Paul qui t'appelle".
+# Asked by install.sh at the first installation (option --greeting).
+GREETING_NAME = None
+
 # --- Server connection ---
 SERVER_URL = "wss://appelermami.fr"
 
