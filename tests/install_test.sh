@@ -33,9 +33,11 @@ EOF
     printf '#!/bin/bash\necho "%s $*" >> "%s/calls.log"\n' "$c" "$T" > "$T/bin/$c"
   done
   printf '#!/bin/bash\necho "apt-get $*" >> "%s/calls.log"\n[ -f "%s/apt_fails" ] && exit 100\nexit 0\n' "$T" "$T" > "$T/bin/apt-get"
-  cat > "$T/bin/getent" <<'EOF'
+  export HOME_OF_OFIC="$T/home/ofic"
+cat > "$T/bin/getent" <<'EOF'
 #!/bin/bash
 [ "$1" = hosts ] && exit 0
+[ "$1" = passwd ] && [ "$2" = ofic ] && { echo "ofic:x:1000:1000::$HOME_OF_OFIC:/bin/bash"; exit 0; }
 case "$2" in input|video|audio) echo "$2:x:1:"; exit 0 ;; esac
 exit 2
 EOF
@@ -72,7 +74,8 @@ fresh() {
   mkdir -p "$T/home/ofic" "$T/root/etc/systemd/system" "$T/root/etc/NetworkManager" "$T/root/boot/firmware" "$T/src"
   printf '[all]\ndtparam=audio=on\n' > "$T/root/boot/firmware/config.txt"
   cp -r "$REPO" "$T/src/Raspberry_receiver"
-  rm -rf "$T/src/Raspberry_receiver/__pycache__"
+  # A copied folder, not a clone (the tests may run inside the clone of the public repository)
+  rm -rf "$T/src/Raspberry_receiver/__pycache__" "$T/src/Raspberry_receiver/.git"
 }
 
 APP="$T/home/ofic/AppelerMamie"
@@ -84,7 +87,7 @@ run 'abuela\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 check "the script ends without error" '[ "$(cat $T/rc.txt)" = 0 ]'
 check "greeting of the announcement asked at the first installation" 'grep -q "Cómo llamar a la persona" $T/out.txt'
 check "greeting saved in config.py and the announcement shown" 'grep -q "^GREETING_NAME = \"abuela\"$" $APP/config.py && grep -q "«Oye abuela, es Paul quien te llama»" $T/out.txt'
-check "messages in Spanish" 'grep -q "INSTALACIÓN DE LLAMAR A LA ABUELA" $T/out.txt && grep -q "\[10/10\] Pantalla" $T/out.txt'
+check "messages in Spanish" 'grep -q "INSTALACIÓN DE LLAMAR A LA ABUELA" $T/out.txt && grep -q "\[11/11\] Pantalla" $T/out.txt'
 check "files copied flat (agent, ColdStart, Chromium script)" '[ -f $APP/main.py ] && [ -f $APP/setup_identity.py ] && [ -x $APP/launch_chromium.sh ] && [ -f $APP/identity_manager.py ]'
 check "tests not copied to the Pi" '[ ! -e $APP/tests ] && [ ! -e $APP/run_tests.py ]'
 check "config.py: LANGUAGE = \"es\"" 'grep -q "^LANGUAGE = \"es\"" $APP/config.py'
@@ -107,7 +110,7 @@ check "Chromium camera/microphone policy: production + test server (:8443), vali
 check "installation log written" 'grep -q "INSTALACIÓN" $T/home/ofic/appelermamie-install.log'
 
 check "config.py installed with HDMI_PORT = 3 by default" 'grep -q "^HDMI_PORT = 3$" $APP/config.py'
-check "self-repair: step shown" 'grep -q "\[9/10\] Reparación automática" $T/out.txt'
+check "self-repair: step shown" 'grep -q "\[9/11\] Reparación automática" $T/out.txt'
 check "self-repair: root copy of selfheal.py (outside ~/AppelerMamie)" 'cmp -s $T/root/usr/local/lib/appelermamie/selfheal.py $REPO/selfheal.py'
 check "self-repair: service (user folder) and timer" 'grep -q "ExecStart=/usr/bin/python3 /usr/local/lib/appelermamie/selfheal.py $T/home/ofic/AppelerMamie$" $T/root/etc/systemd/system/appelermamie-selfheal.service && grep -q "OnUnitActiveSec=1min" $T/root/etc/systemd/system/appelermamie-selfheal.timer'
 check "self-repair: timer enabled and started" 'grep -q "systemctl enable --now appelermamie-selfheal.timer" $T/calls.log'
@@ -116,11 +119,19 @@ check "hardware watchdog installed" 'grep -q "^RuntimeWatchdogSec=15s" $T/root/e
 check "Wi-Fi power saving off" 'grep -q "^wifi.powersave = 2" $T/root/etc/NetworkManager/conf.d/appelermamie-wifi.conf && grep -q "iw dev wlan0 set power_save off" $T/calls.log'
 check "the TV does not turn on when the Pi starts (config.txt)" 'grep -q "^hdmi_ignore_cec_init=1$" $T/root/boot/firmware/config.txt && grep -q "^dtparam=audio=on$" $T/root/boot/firmware/config.txt'
 check "config.py: nightly restart at 4 h by default" 'grep -q "^NIGHTLY_REBOOT_HOUR = 4$" $APP/config.py'
+check "remote updates: step shown" 'grep -q "\[10/11\] Actualizaciones a distancia" $T/out.txt'
+check "remote updates: root copy of update.sh" 'cmp -s $T/root/usr/local/lib/appelermamie/update.sh $REPO/update.sh'
+check "remote updates: signing key installed (root)" 'cmp -s $T/root/etc/appelermamie/allowed_signers $REPO/ColdStart/allowed_signers'
+check "remote updates: service with the user and the project folder" 'grep -q "^ExecStart=/bin/bash /usr/local/lib/appelermamie/update.sh ofic $T/src/Raspberry_receiver$" $T/root/etc/systemd/system/appelermamie-update.service'
+check "remote updates: request file watched, enabled and started" 'grep -q "^PathExists=$T/home/ofic/AppelerMamie/update_request$" $T/root/etc/systemd/system/appelermamie-update.path && grep -q "systemctl enable --now appelermamie-update.path" $T/calls.log'
+check "folder copied (not a git clone): version unknown, told that remote updates are not possible" 'grep -qx unknown $APP/VERSION && grep -q "sin actualizaciones a distancia" $T/out.txt'
+check "list of the packages installed kept" 'grep -q "ffmpeg.*chromium" $APP/.apt-packages'
 
 echo "=== 2. Update (run again, custom settings, restart accepted)"
 sed -i -e 's|^MOUSE_DEVICE = None|MOUSE_DEVICE = "/dev/input/event4"|' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' -e 's|^VOICE_VOLUME = 1.5|VOICE_VOLUME = 1.2|' -e 's|^SERVER_URL = "wss://appelermami.fr"|SERVER_URL = "wss://appelermami.fr:8443"|' -e 's|^HDMI_PORT = 3|HDMI_PORT = 2|' -e 's|^NIGHTLY_REBOOT_HOUR = 4|NIGHTLY_REBOOT_HOUR = None|' -e 's|^RINGTONE_PATH = .*|RINGTONE_PATH = str(BASE_DIR / "my-ringtone.wav")|' $APP/config.py
 cp "$APP/ringtone.mp3" "$APP/my-ringtone.mp3"
 printf 'x' >> $APP/main.py
+echo "# key of the first installation" > $T/root/etc/appelermamie/allowed_signers
 : > $T/calls.log
 run '\ns\n' "$T/src/Raspberry_receiver/install.sh"
 check "the script ends without error" '[ "$(cat $T/rc.txt)" = 0 ]'
@@ -138,6 +149,7 @@ check "test server: the Chromium policy keeps the domain without the port" 'grep
 check "copy of the old config.py kept" 'ls $APP/config.py.bak-* >/dev/null 2>&1 && grep -q "event4" $APP/config.py.bak-*'
 check "program files updated" '! grep -q "x$" <(tail -c 2 $APP/main.py)'
 check "restart done (answer \"s\")" 'grep -q "^reboot" $T/calls.log'
+check "installed signing key never replaced by a new version" 'grep -q "key of the first installation" $T/root/etc/appelermamie/allowed_signers'
 
 echo "=== 3. Run with sudo (root)"
 fresh
@@ -164,7 +176,7 @@ echo "=== 5b. System without NetworkManager nor /boot/firmware/config.txt"
 fresh
 rm -rf "$T/root/etc/NetworkManager" "$T/root/boot"
 run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang fr
-check "installed without error, these settings simply skipped" '[ "$(cat $T/rc.txt)" = 0 ] && [ ! -e $T/root/etc/NetworkManager ] && [ ! -e $T/root/boot ] && grep -q "\[10/10\]" $T/out.txt'
+check "installed without error, these settings simply skipped" '[ "$(cat $T/rc.txt)" = 0 ] && [ ! -e $T/root/etc/NetworkManager ] && [ ! -e $T/root/boot ] && grep -q "\[11/11\]" $T/out.txt'
 
 echo "=== 6. A step fails (apt error)"
 fresh
@@ -211,6 +223,33 @@ run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang fr --greeting 'papi "Jo"
 check "greeting changed, quotes and symbols removed, config.py still valid" '[ "$(cat $T/rc.txt)" = 0 ] && grep -q "^GREETING_NAME = \"papi Jo rm -rf\"$" $APP/config.py && "$REALPY" -c "import ast,sys; ast.parse(open(sys.argv[1], encoding=\"utf-8\").read())" "$(native $APP/config.py)"'
 run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang fr --greeting ""
 check "--greeting \"\": announcement without greeting" 'grep -q "^GREETING_NAME = None$" $APP/config.py && grep -q "« C.est Paul qui t.appelle »" $T/out.txt'
+
+echo "=== 12. --update: no question, no restart of the Raspberry"
+fresh
+run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+: > $T/calls.log
+APPELERMAMIE_VERSION=v0.2.0 run '' "$T/src/Raspberry_receiver/install.sh" --update
+check "update ends without error, without any answer" '[ "$(cat $T/rc.txt)" = 0 ]'
+check "language of the Raspberry kept without question" 'grep -q "INSTALACIÓN" $T/out.txt && grep -q "^LANGUAGE = \"es\"" $APP/config.py && ! grep -q "Langue / Language" $T/out.txt'
+check "packages unchanged: apt not run" '! grep -q "apt-get" $T/calls.log && grep -q "Paquetes sin cambios" $T/out.txt'
+check "programs restarted, the Raspberry is not" 'grep -q "systemctl restart tv-control.service chromium-autolaunch.service" $T/calls.log && ! grep -q "^reboot" $T/calls.log'
+check "installed version written and shown" 'grep -qx v0.2.0 $APP/VERSION && grep -q "Versión v0.2.0 instalada" $T/out.txt'
+check "no QR code at an update" '! grep -q "█" $T/out.txt'
+echo "ffmpeg" > $APP/.apt-packages
+: > $T/calls.log
+run '' "$T/src/Raspberry_receiver/install.sh" --update
+check "list of packages changed: apt run" 'grep -q "apt-get install -y -q ffmpeg alsa-utils" $T/calls.log'
+
+echo "=== 13. Run as root by update.sh (--update --user)"
+printf '#!/bin/bash\n[ "$1" = "-u" ] && echo 0 || /usr/bin/id "$@"\n' > "$T/bin/id"; chmod +x "$T/bin/id"
+: > $T/calls.log
+APPELERMAMIE_VERSION=v0.2.1 APPELERMAMIE_SRC_DIR=/home/ofic/AppelerMamie-src run '' "$T/src/Raspberry_receiver/install.sh" --update --user ofic
+check "accepted as root with --update --user" '[ "$(cat $T/rc.txt)" = 0 ] && grep -qx v0.2.1 $APP/VERSION'
+check "made for the user: files given back to ofic" 'grep -q "chown -R ofic: $T/home/ofic/AppelerMamie" $T/calls.log'
+check "the update service keeps the clone of the user (not the temporary copy)" 'grep -q "update.sh ofic /home/ofic/AppelerMamie-src$" $T/root/etc/systemd/system/appelermamie-update.service'
+run '' "$T/src/Raspberry_receiver/install.sh" --update
+check "root without --user: still refused" '[ "$(cat $T/rc.txt)" != 0 ] && grep -q "No ejecutes este script con sudo" $T/out.txt'
+rm "$T/bin/id"
 
 echo
 echo "$pass passed, $fail failed"

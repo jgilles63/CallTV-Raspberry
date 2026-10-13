@@ -57,6 +57,9 @@ FILES = {
     "/proc/bus/input/devices": 'I: Bus=0003\nN: Name="Logitech USB Optical Mouse"\nH: Handlers=mouse0 event3\n\nI: Bus=0019\nN: Name="vc4-hdmi-0"\nH: Handlers=kbd event0\n',
     "/proc/meminfo": "MemTotal:        8000000 kB\nMemAvailable:    6000000 kB\n",
     "/sys/class/thermal/thermal_zone0/temp": "72350\n",
+    "VERSION": "v0.2.0\n",
+    "/var/lib/appelermamie/update.json": json.dumps(
+        {"time": 1760000000, "from": "v0.1.2", "to": "v0.2.0", "result": "ok", "reason": ""}),
     "/var/lib/appelermamie/selfheal.json": json.dumps({"history": [
         {"time": 1760000000, "action": "page", "reason": "page not connected"},
         {"time": 1760241600, "action": "reboot", "reason": "nightly"}]}),
@@ -77,6 +80,7 @@ COMMANDS = {
     'echo "pow 0" | cec-client -s -d 1': "opening a connection...\npower status: standby\n",
     "vcgencmd get_throttled": "throttled=0x50005\n",
     "systemctl is-active appelermamie-selfheal.timer": "active\n",
+    "systemctl is-active appelermamie-update.path": "active\n",
     "systemctl show -p RuntimeWatchdogUSec": "RuntimeWatchdogUSec=15s\n",
     "iw dev wlan0 get power_save": "Power save: on\n",
     "journalctl -u appelermamie-selfheal.service -n 500 --no-pager -o short-iso":
@@ -122,6 +126,20 @@ by_id = {c["id"]: c for c in report["checks"]}
 print(json.dumps(by_id, ensure_ascii=False, indent=1)[:3000])
 
 check("report version and time", report["version"] == 1 and report["time"].endswith("+00:00"))
+check("installed version (VERSION file)", by_id["version"] == {"id": "version", "status": "info", "value": "v0.2.0"})
+check("remote updates active, last one",
+      by_id["update"]["status"] == "ok" and by_id["update"]["value"].startswith("active, 2025-10-09 ")
+      and by_id["update"]["value"].endswith(" v0.1.2 -> v0.2.0 ok"), by_id["update"]["value"])
+check("update logs included", "appelermamie-update.service" in report["logs"])
+FILES["/var/lib/appelermamie/update.json"] = json.dumps(
+    {"time": 1760000000, "from": "v0.2.0", "to": "v0.2.1", "result": "rolled back", "reason": "agent not connected after the update"})
+check("update rolled back: warn, with the reason",
+      d.check_update()["status"] == "warn" and d.check_update()["value"].endswith("v0.2.0 -> v0.2.1 rolled back (agent not connected after the update)"))
+COMMANDS["systemctl is-active appelermamie-update.path"] = "inactive\n"
+FILES["/var/lib/appelermamie/update.json"] = None
+check("remote updates not installed (older version): warn", d.check_update() == {"id": "update", "status": "warn", "value": "inactive"})
+FILES["VERSION"] = None
+check("no VERSION file (older version): unknown", d.check_version()["value"] == "unknown")
 check("model (NUL stripped)", by_id["system.model"]["value"] == "Raspberry Pi 5 Model B Rev 1.0")
 check("OS name", by_id["system.os"]["value"].startswith("Debian GNU/Linux 12 (bookworm) — Linux "))
 check("uptime 3d 05:01", by_id["system.uptime"]["value"] == "3d 05:01")

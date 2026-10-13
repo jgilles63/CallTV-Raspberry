@@ -14,16 +14,20 @@
 #   bash install.sh --lang es   # without the question
 #   bash install.sh --lang es --greeting abuela   # greeting of the announcement
 #                               # ("" = none), asked at the first installation
+#   bash install.sh --update    # update: no question, no restart of the Raspberry
 #
 # It can be run again at any time to update a Raspberry: the identity
 # (identity.json) and the settings of config.py are kept.
+# update.sh (remote update, run as root) calls it as root with
+# "--update --user <user>": the only case where root is accepted.
 # Messages follow the chosen language (texts in i18n.py, "install.*" keys).
 
 set -Eeuo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_DIR="$HOME/AppelerMamie"
-LOG_FILE="$HOME/appelermamie-install.log"
+# Clone of the project kept up to date by update.sh (which runs this script
+# from a root-owned copy of the verified version: APPELERMAMIE_SRC_DIR)
+CLONE_DIR="${APPELERMAMIE_SRC_DIR:-$SRC_DIR}"
 PYTHON=python3
 export PYTHONDONTWRITEBYTECODE=1
 
@@ -35,12 +39,14 @@ APT_PACKAGES=(ffmpeg alsa-utils cec-utils python3-venv python3-dev build-essenti
 # Python packages of the agent (versions tested on Raspberry Pi OS 13 "trixie")
 PIP_PACKAGES=("websockets>=13,<18" "evdev>=1.6,<3" "gTTS>=2.5,<3" "qrcode>=7,<9")
 
-TOTAL_STEPS=10
+TOTAL_STEPS=11
 STEP=0
 STEP_NAME=""
 LANG_CHOICE=""
 GREETING_CHOICE=""
 GREETING_SET=""
+UPDATE=""
+TARGET_USER=""
 
 # ---------------------------------------------------------
 # Options
@@ -51,10 +57,28 @@ while [ $# -gt 0 ]; do
     --lang=*) LANG_CHOICE="${1#--lang=}"; shift ;;
     --greeting) GREETING_CHOICE="${2-}"; GREETING_SET=1; shift; [ $# -gt 0 ] && shift ;;
     --greeting=*) GREETING_CHOICE="${1#--greeting=}"; GREETING_SET=1; shift ;;
-    -h|--help) sed -n '5,20p' "$0"; exit 0 ;;
+    --update) UPDATE=1; shift ;;
+    --user) TARGET_USER="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+    -h|--help) sed -n '5,23p' "$0"; exit 0 ;;
     *) echo "❌ Unknown option: $1 (see --help)" >&2; exit 1 ;;
   esac
 done
+
+# Run as root by update.sh (--update --user <user>): the installation is made
+# for that user (sudo then never asks a password). Otherwise, as before: the
+# Raspberry user, sudo when needed.
+AS_ROOT=""
+if [ "$(id -u)" -eq 0 ] && [ -n "$UPDATE" ] && [ -n "$TARGET_USER" ]; then
+  AS_ROOT=1
+  HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+  [ -n "$HOME" ] || { echo "❌ Unknown user: $TARGET_USER" >&2; exit 1; }
+  export HOME USER="$TARGET_USER"
+  USER_UID="$(id -u "$TARGET_USER")"
+else
+  USER_UID="$(id -u)"
+fi
+APP_DIR="$HOME/AppelerMamie"
+LOG_FILE="$HOME/appelermamie-install.log"
 
 # The project files must be next to this script (no translation available otherwise)
 for f in main.py config.py i18n.py ColdStart/setup_identity.py ColdStart/tv-control.service ColdStart/chromium-autolaunch.service; do
@@ -120,7 +144,8 @@ if [ -z "$LANG_CHOICE" ]; then
     default_lang="$(sed -n 's/^LANGUAGE *= *"\([a-z][a-z]\)".*/\1/p' "$APP_DIR/config.py" | head -1)"
   fi
   default_lang="${default_lang:-fr}"
-  read -r -p "Langue / Language / Idioma (fr, en, es) [$default_lang] : " LANG_CHOICE || true
+  # Update: the language of the Raspberry, without question
+  [ -n "$UPDATE" ] || read -r -p "Langue / Language / Idioma (fr, en, es) [$default_lang] : " LANG_CHOICE || true
   LANG_CHOICE="${LANG_CHOICE:-$default_lang}"
 fi
 case "$LANG_CHOICE" in
@@ -128,14 +153,20 @@ case "$LANG_CHOICE" in
   *) echo "❌ Langue / Language / Idioma : fr, en, es" >&2; exit 1 ;;
 esac
 
-if [ "$(id -u)" -eq 0 ]; then
+if [ "$(id -u)" -eq 0 ] && [ -z "$AS_ROOT" ]; then
   msg install.noRoot >&2
   exit 1
 fi
 
+# Run as root: the files made for the user are given back to the user, even
+# when the installation stops on an error
+if [ -n "$AS_ROOT" ]; then
+  trap 'chown -R "$USER:" "$APP_DIR" "$LOG_FILE" 2>/dev/null || true' EXIT
+fi
+
 # Greeting of the voice announcement ("Hey grandma, ..."): asked at the first
 # installation only (an update keeps the value of config.py)
-if [ -z "$GREETING_SET" ] && [ ! -f "$APP_DIR/config.py" ]; then
+if [ -z "$GREETING_SET" ] && [ -z "$UPDATE" ] && [ ! -f "$APP_DIR/config.py" ]; then
   # (question printed apart: read -p shows nothing when the answers come from a pipe)
   printf '%s' "$(msg install.askGreeting)"
   read -r GREETING_CHOICE || true
@@ -161,26 +192,37 @@ fi
 
 if [ ! -x /usr/sbin/lightdm ] && ! command -v labwc >/dev/null && ! command -v startx >/dev/null; then
   msg install.noDesktop
-  if ! ask install.askContinue; then
+  if [ -z "$UPDATE" ] && ! ask install.askContinue; then
     msg install.stopped
     exit 1
   fi
 fi
 
-msg install.sudo
-sudo -v
-# Keep the sudo rights during the whole installation
-( while kill -0 "$$" 2>/dev/null; do sudo -n true; sleep 50; done ) 2>/dev/null &
+if [ -z "$AS_ROOT" ]; then
+  msg install.sudo
+  sudo -v
+  # Keep the sudo rights during the whole installation
+  ( while kill -0 "$$" 2>/dev/null; do sudo -n true; sleep 50; done ) 2>/dev/null &
+fi
 
 # ---------------------------------------------------------
 # 2. System packages
 # ---------------------------------------------------------
 step install.packages
-sudo apt-get update -q
-sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${APT_PACKAGES[@]}"
-# Chromium is installed if missing, but never upgraded by this script: a new
-# version once stopped the camera and the microphone of the calls (11/10/2026).
-sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-upgrade chromium
+# An update only installs them when the list changed since the last time
+packages_file="$APP_DIR/.apt-packages"
+packages="${APT_PACKAGES[*]} chromium"
+if [ -n "$UPDATE" ] && [ "$(cat "$packages_file" 2>/dev/null)" = "$packages" ]; then
+  msg install.packagesUnchanged
+else
+  sudo apt-get update -q
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${APT_PACKAGES[@]}"
+  # Chromium is installed if missing, but never upgraded by this script: a new
+  # version once stopped the camera and the microphone of the calls (11/10/2026).
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-upgrade chromium
+  mkdir -p "$APP_DIR"
+  echo "$packages" > "$packages_file"
+fi
 
 # ---------------------------------------------------------
 # 3. Project files, copied flat into ~/AppelerMamie
@@ -190,7 +232,7 @@ mkdir -p "$APP_DIR"
 
 # Files created by another user (e.g. with sudo during a manual install)
 # cannot be replaced: they are given back to the Raspberry user.
-if [ -n "$(find "$APP_DIR" \( ! -user "$(id -u)" -o ! -writable \) -print -quit 2>/dev/null)" ]; then
+if [ -z "$AS_ROOT" ] && [ -n "$(find "$APP_DIR" \( ! -user "$USER_UID" -o ! -writable \) -print -quit 2>/dev/null)" ]; then
   sudo chown -R "$USER:" "$APP_DIR"
   sudo chmod -R u+w "$APP_DIR"
 fi
@@ -215,6 +257,14 @@ done
 # Files copied from Windows may have Windows line endings
 sed -i 's/\r$//' "$APP_DIR"/*.py "$APP_DIR"/*.sh
 chmod +x "$APP_DIR"/*.sh
+
+# Installed version (sent to the server by the agent): given by update.sh, or
+# the tag of the cloned project (git), or "unknown" for a copied folder
+version="${APPELERMAMIE_VERSION:-}"
+if [ -z "$version" ] && command -v git >/dev/null && [ -d "$CLONE_DIR/.git" ]; then
+  version="$(git -c safe.directory="$CLONE_DIR" -C "$CLONE_DIR" describe --tags --always --dirty 2>/dev/null || true)"
+fi
+echo "${version:-unknown}" > "$APP_DIR/VERSION"
 
 # New config.py = the one of the project + the values of the previous one +
 # the chosen language and greeting, prepared in a temporary file then moved in
@@ -362,7 +412,7 @@ device_code="$(cd "$APP_DIR" && "$PYTHON" -c \
 # ---------------------------------------------------------
 step install.services
 for service in tv-control.service chromium-autolaunch.service; do
-  sed -e "s#/home/YOUR_USER#$HOME#g" -e "s#YOUR_USER#$USER#g" -e "s#YOUR_UID#$(id -u)#g" "$SRC_DIR/ColdStart/$service" \
+  sed -e "s#/home/YOUR_USER#$HOME#g" -e "s#YOUR_USER#$USER#g" -e "s#YOUR_UID#$USER_UID#g" "$SRC_DIR/ColdStart/$service" \
     | sudo tee "/etc/systemd/system/$service" >/dev/null
 done
 sudo systemctl daemon-reload
@@ -403,7 +453,33 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now appelermamie-selfheal.timer
 
 # ---------------------------------------------------------
-# 10. Screen: desktop autologin, no blanking, camera/microphone allowed
+# 10. Remote updates (update.sh, as root, when the agent drops the request
+#     of the server): only versions signed by the key of allowed_signers
+# ---------------------------------------------------------
+step install.updates
+# Written beside then moved: update.sh may be the script running this
+# installation (bash reads it as it goes: it must never be changed in place)
+sed 's/\r$//' "$SRC_DIR/update.sh" | sudo tee /usr/local/lib/appelermamie/update.sh.new >/dev/null
+sudo mv -f /usr/local/lib/appelermamie/update.sh.new /usr/local/lib/appelermamie/update.sh
+# The signing key is installed once (root only can change it afterwards: a
+# version cannot replace the key that checks it)
+sudo mkdir -p /etc/appelermamie
+if ! sudo test -f /etc/appelermamie/allowed_signers; then
+  sed 's/\r$//' "$SRC_DIR/ColdStart/allowed_signers" | sudo tee /etc/appelermamie/allowed_signers >/dev/null
+fi
+for unit in appelermamie-update.service appelermamie-update.path; do
+  sed -e 's/\r$//' -e "s#/home/YOUR_USER/AppelerMamie-src#$CLONE_DIR#g" -e "s#/home/YOUR_USER#$HOME#g" \
+      -e "s#YOUR_USER#$USER#g" "$SRC_DIR/ColdStart/$unit" \
+    | sudo tee "/etc/systemd/system/$unit" >/dev/null
+done
+sudo systemctl daemon-reload
+sudo systemctl enable --now appelermamie-update.path
+if [ ! -d "$CLONE_DIR/.git" ]; then
+  msg install.updatesNoClone
+fi
+
+# ---------------------------------------------------------
+# 11. Screen: desktop autologin, no blanking, camera/microphone allowed
 # ---------------------------------------------------------
 step install.display
 if [ -x /usr/bin/raspi-config ]; then
@@ -425,6 +501,13 @@ printf '{\n  "VideoCaptureAllowedUrls": ["https://%s", "https://%s:8443"],\n  "A
 # ---------------------------------------------------------
 # Summary: QR code and identifier to send to the server administrator
 # ---------------------------------------------------------
+if [ -n "$UPDATE" ]; then
+  # Update: the programs are restarted, not the Raspberry
+  sudo systemctl restart tv-control.service chromium-autolaunch.service
+  msg install.updated version="$(cat "$APP_DIR/VERSION")"
+  exit 0
+fi
+
 echo
 (cd "$APP_DIR" && "$APP_DIR/venv/bin/python3" -c \
   'import sys; from setup_identity import generate_qr_code_text; print(generate_qr_code_text(sys.argv[1]))' \

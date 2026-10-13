@@ -16,6 +16,7 @@ Main agent:
 import asyncio
 import json
 import os
+import re
 import signal
 import socket
 import threading
@@ -30,6 +31,18 @@ from device_code import device_code
 from i18n import t
 from tts_audio import AlertSound
 from tv_control import tv_on_and_accept, tv_return
+
+# Version name accepted in an update request (signed tag of the public repository)
+VERSION_PATTERN = re.compile(r"^v\d{1,4}\.\d{1,4}\.\d{1,4}$")
+
+
+def installed_version():
+    """Version written by install.sh (VERSION file), or "unknown"."""
+    try:
+        text = (config.BASE_DIR / "VERSION").read_text(encoding="utf-8").strip()
+    except (OSError, AttributeError):
+        return "unknown"
+    return re.sub(r"[^A-Za-z0-9._+-]", "", text)[:40] or "unknown"
 
 
 class TVControlAgent:
@@ -197,6 +210,8 @@ class TVControlAgent:
             # Call believed in progress: after a server restart, the server
             # answers "hangup" (the TV is given back, the ringtone stops)
             "activeCallId": self.outgoing_call_id or self.current_call_id,
+            # Installed version (shown by node admin.js list)
+            "version": installed_version(),
         }
         await self.send_message(msg)
         print(f"✅ Registration sent: {config.RASPBERRY_ID}")
@@ -261,6 +276,9 @@ class TVControlAgent:
             # In a task: the checks take a few seconds, the calls must not wait
             asyncio.create_task(self.handle_diagnose_request(data))
 
+        elif msg_type == "update_request":
+            await self.handle_update_request(data)
+
         elif msg_type == "error":
             error_code = data.get("errorCode")
             # UNAUTHORIZED before register_ack = secret refused at registration
@@ -297,6 +315,41 @@ class TVControlAgent:
             "report": report,
         })
         print(f"🩺 Health report sent ({request_id})")
+
+    # ---------------------------------------------------------
+    # Remote update
+    # ---------------------------------------------------------
+
+    async def handle_update_request(self, data):
+        """
+        The server tells that a version exists (node admin.js update): only
+        its name is written to update_request. The update itself is made by
+        update.sh (as root, started by appelermamie-update.path), which only
+        installs a version signed by the key of the Raspberry, after the call.
+        """
+        request_id = data.get("requestId")
+        version = data.get("version")
+        if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):
+            print(f"⚠️ Update request refused: invalid version {version!r}")
+            status = "invalid"
+        else:
+            path = config.BASE_DIR / "update_request"
+            tmp = path.with_name(path.name + ".tmp")
+            try:
+                tmp.write_text(version + "\n", encoding="utf-8")
+                os.replace(tmp, path)
+                print(f"🔄 Update to {version} requested (installed: {installed_version()})")
+                status = "accepted"
+            except OSError as e:
+                print(f"❌ Update request not written: {e}")
+                status = "error"
+        await self.send_message({
+            "type": "update_ack",
+            "requestId": request_id,
+            "status": status,
+            "version": version if status != "invalid" else None,
+            "installed": installed_version(),
+        })
 
     # ---------------------------------------------------------
     # Incoming call and ringtone

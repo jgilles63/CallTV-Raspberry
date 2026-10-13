@@ -1,0 +1,4 @@
+# Public key that signs the versions of CallTV-Raspberry (git tags).
+# Installed once by install.sh in /etc/appelermamie/allowed_signers (root
+# only can change it): update.sh only installs a version signed by this key.
+82543796+jgilles63@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHNRHcCC0LLLix9G863Zi1JWPZPfxzOqmP7/m7Y+RZxY

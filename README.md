@@ -43,6 +43,10 @@ programs** that connect to the server with the same identity:
 | `ColdStart/chromium-autolaunch.service` | systemd service that starts Chromium at boot |
 | `ColdStart/tv-control.service` | systemd service of the Python agent |
 | `install.sh` | **Installation or update in one command** (see Installation) |
+| `selfheal.py` | Self-repair (Wi-Fi, TV page, agent, nightly restart), run as root every minute |
+| `diagnostics.py`, `diagnose.sh` | Health report (also asked by the server: `node admin.js diagnose`) |
+| `update.sh` | **Remote update** to a signed version (see "Remote updates") |
+| `ColdStart/allowed_signers` | Public key that signs the versions (installed once on the Raspberry) |
 | `switch_server.sh` | Switches the Raspberry between the **production** server and the **test** server (see below) |
 | `HomeAssistant/send_sigur_fromAlexa.sh` | Answers remotely by sending `SIGUSR1` to the agent |
 
@@ -254,6 +258,31 @@ sudo systemctl enable --now chromium-autolaunch.service
 > The service of the Python agent is `ColdStart/tv-control.service` (replace `YOUR_USER`,
 > which `install.sh` does). It must run as the Raspberry user (not `root`), otherwise
 > `~/AppelerMamie` does not point to the right folder.
+
+## Remote updates
+
+A Raspberry installed from a **clone** of the public repository (see Installation) can be
+updated from the server, without going to the TV:
+
+```bash
+node admin.js update rpi-xxxxxxxx v0.2.1      # on the server: one Raspberry
+node admin.js update --all v0.2.1             # all the Raspberry devices online
+```
+
+- The server only **tells** which version to install: it never sends code, files or
+  commands. The agent writes the version into `~/AppelerMamie/update_request`.
+- `update.sh` (root, `appelermamie-update.service`, started by `appelermamie-update.path`)
+  then waits for the end of a call, downloads the versions (`git fetch`), and only accepts a
+  version whose tag is **signed** by the key of `/etc/appelermamie/allowed_signers` (copied
+  once from `ColdStart/allowed_signers` at the first installation) and **newer** than the
+  installed one.
+- It runs `install.sh --update` (no question, the Raspberry is not restarted), then waits
+  for the agent to be connected again; otherwise it **goes back** to the previous version.
+- Result: `node admin.js list` (version of each Raspberry), `node admin.js diagnose <id>`
+  (installed version, last update), `journalctl -u appelermamie-update` on the Raspberry.
+
+By hand, on the Raspberry: `cd ~/AppelerMamie-src && git fetch --tags && git checkout
+v0.2.1 && bash install.sh --update`.
 
 ## Production or test server
 

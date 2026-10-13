@@ -1,0 +1,10 @@
+[Unit]
+Description=AppelerMamie - update requested by the agent (update_request file)
+
+[Path]
+# File written by the agent when the server tells it a new version exists
+PathExists=/home/YOUR_USER/AppelerMamie/update_request
+Unit=appelermamie-update.service
+
+[Install]
+WantedBy=multi-user.target

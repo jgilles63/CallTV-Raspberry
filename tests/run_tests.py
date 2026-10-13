@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Runs the Raspberry tests: every *_test.py file of this folder, one after the
-# other, then install_test.sh (the real install.sh in a fake home). Nothing is
+# other, and the *_test.sh scripts (install.sh in a fake home, update.sh with
+# real git repositories and signing keys). Nothing is
 # installed and the real system is never touched: system files, commands, the
 # TV, the mouse and the network are simulated.
 #
@@ -18,7 +19,7 @@ from pathlib import Path
 here = Path(__file__).resolve().parent
 name_filter = sys.argv[1] if len(sys.argv) > 1 else ""
 files = sorted(p for p in here.iterdir()
-               if (p.name.endswith("_test.py") or p.name == "install_test.sh") and name_filter in p.name)
+               if p.name.endswith(("_test.py", "_test.sh")) and name_filter in p.name)
 
 if not files:
     print(f'No test file matches "{name_filter}"')

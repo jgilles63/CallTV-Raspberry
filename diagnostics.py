@@ -44,10 +44,14 @@ REPORT_VERSION = 1
 SERVICES = (("service.tvControl", "tv-control.service"),
             ("service.chromium", "chromium-autolaunch.service"))
 # Services whose last errors are shown (the self-repair actions are shown too)
-LOG_SERVICES = ("tv-control.service", "chromium-autolaunch.service", "appelermamie-selfheal.service")
+LOG_SERVICES = ("tv-control.service", "chromium-autolaunch.service", "appelermamie-selfheal.service",
+                "appelermamie-update.service")
 
 # State of the self-repair (selfheal.py)
 SELFHEAL_STATE_FILE = "/var/lib/appelermamie/selfheal.json"
+
+# Result of the last remote update (update.sh)
+UPDATE_STATE_FILE = "/var/lib/appelermamie/update.json"
 
 # Error lines kept from the logs of each service
 LOG_LINES_KEPT = 15
@@ -145,6 +149,31 @@ def check_selfheal():
     except (ValueError, KeyError, TypeError, AttributeError):
         pass
     return check("selfheal", "ok" if state == "active" else "warn", value)
+
+
+def check_version():
+    """Installed version (VERSION file written by install.sh)."""
+    value = (read_file(str(config.BASE_DIR / "VERSION")) or "").strip() or "unknown"
+    return check("version", "info", value)
+
+
+def check_update():
+    """Remote updates possible (appelermamie-update.path), and the last one."""
+    output = run(["systemctl", "is-active", "appelermamie-update.path"])
+    state = output.strip() if output else "?"
+    value, status = state, "ok" if state == "active" else "warn"
+    try:
+        last = json.loads(read_file(UPDATE_STATE_FILE) or "{}")
+        if last:
+            when = datetime.datetime.fromtimestamp(float(last["time"])).strftime("%Y-%m-%d %H:%M")
+            value += f", {when} {last['from']} -> {last['to']} {last['result']}"
+            if last.get("reason"):
+                value += f" ({last['reason']})"
+            if last["result"] in ("failed", "rolled back"):
+                status = "warn"
+    except (ValueError, KeyError, TypeError, AttributeError):
+        pass
+    return check("update", status, value)
 
 
 def check_watchdog():
@@ -372,7 +401,8 @@ def run_checks(skip_cec=False):
     Runs all the checks (a few seconds, cec-client being the slowest).
     skip_cec: True during a call, so that cec-client does not disturb the TV.
     """
-    checks = [safe(check_model), safe(check_os), safe(check_uptime), safe(check_watchdog)]
+    checks = [safe(check_version), safe(check_update), safe(check_model), safe(check_os), safe(check_uptime),
+              safe(check_watchdog)]
     services = safe(check_services)
     checks += services if isinstance(services, list) else [services]
     checks += [

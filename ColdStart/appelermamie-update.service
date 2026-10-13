@@ -1,0 +1,14 @@
+[Unit]
+Description=AppelerMamie - update to a signed version of the public repository
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Runs as root (installs the new version with install.sh --update). Started by
+# appelermamie-update.path when the agent drops ~/AppelerMamie/update_request.
+# The script is a root-owned copy (install.sh); user and project folder
+# filled in by install.sh.
+ExecStart=/bin/bash /usr/local/lib/appelermamie/update.sh YOUR_USER /home/YOUR_USER/AppelerMamie-src
+StateDirectory=appelermamie
+TimeoutStartSec=45min
