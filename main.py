@@ -23,7 +23,7 @@ import asyncio
 
 import config
 from identity import load_identity
-from agent import TVControlAgent
+from agent import TVControlAgent, installed_version
 from tts_audio import find_ringing_card, set_max_volume
 
 
@@ -41,6 +41,7 @@ def main():
 
     print(f"""
 Configuration:
+  Version: {installed_version()}
   Identity: {config.IDENTITY_FILE}
   Device ID: {config.RASPBERRY_ID}
   Server: {config.SERVER_URL}
