@@ -1,0 +1,30 @@
+# Raspberry receiver: files never to commit (also the .gitignore of the
+# public repository CallTV-Raspberry, published from this folder)
+
+# --- Secrets of a Raspberry ---
+identity.json
+identity.json.bak
+.tmp_identity_*
+setup_qr_code.txt
+config.py.bak-*
+*.pem
+*.key
+
+# --- Files made on the Raspberry ---
+*.wav
+cache_audio/
+agent_state.json
+venv/
+.venv/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+
+# --- Systems and editors ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.log

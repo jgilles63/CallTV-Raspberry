@@ -1,0 +1,11 @@
+[Unit]
+Description=AppelerMamie - self-repair of the Raspberry (Wi-Fi, TV page, agent, nightly restart)
+After=network.target
+
+[Service]
+Type=oneshot
+# Runs as root (restarts the network, the services, the Raspberry).
+# The script is a root-owned copy (install.sh), not the one of ~/AppelerMamie.
+# Folder of the agent of the Raspberry user (filled in by install.sh)
+ExecStart=/usr/bin/python3 /usr/local/lib/appelermamie/selfheal.py /home/YOUR_USER/AppelerMamie
+StateDirectory=appelermamie

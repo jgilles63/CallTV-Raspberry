@@ -1,0 +1,10 @@
+# Line endings: text files are stored AND checked out with Unix line endings
+# (LF), even on Windows: the scripts run on the Raspberry would otherwise break
+# with "\r: command not found".
+* text=auto eol=lf
+
+# Binary files: never converted
+*.mp3 binary
+*.wav binary
+*.png binary
+*.jpg binary

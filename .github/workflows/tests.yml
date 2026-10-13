@@ -1,0 +1,29 @@
+# Automatic tests of the public repository CallTV-Raspberry (this folder,
+# published from the private repository): run by GitHub on every push.
+# In the private repository, the tests are run by the .github/ folder of the root.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  raspberry:
+    name: Raspberry (Python, install.sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"   # Raspberry Pi OS 13 (trixie)
+      - name: Install websockets
+        run: pip install "websockets>=13,<18"
+      - name: Tests
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python3 tests/run_tests.py

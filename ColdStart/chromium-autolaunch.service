@@ -1,0 +1,19 @@
+[Unit]
+Description=Launch Chromium fullscreen
+After=multi-user.target
+
+[Service]
+Type=simple
+# Replace YOUR_USER with the name of the Raspberry user (3 occurrences)
+# and YOUR_UID with its number (command: id -u)
+User=YOUR_USER
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/home/YOUR_USER/.Xauthority"
+# Sound server of the desktop session (PipeWire): needed for the microphone
+Environment="XDG_RUNTIME_DIR=/run/user/YOUR_UID"
+ExecStart=/home/YOUR_USER/AppelerMamie/launch_chromium.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
