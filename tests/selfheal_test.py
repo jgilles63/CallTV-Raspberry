@@ -179,6 +179,36 @@ world["agent"]["inCall"] = True
 state = {}
 check("page not connected during a call: Chromium not restarted", minutes(10, state) == [])
 
+# TV page stuck during a call (told by the server to the agent: displayStuckAt)
+reset()
+world["agent"]["displayStuckAt"] = world["t"] - 30
+state = {}
+done = minutes(1, state)
+check("page stuck during a call: Chromium restarted at once",
+      done == ["page"] and actions == ["systemctl restart chromium-autolaunch.service"])
+check("... reason in the history", state["history"][-1]["reason"] == "page stuck during a call")
+check("... same stuck page: not restarted again", minutes(30, state) == [])
+world["agent"]["displayStuckAt"] = world["t"]
+done = minutes(10, state)
+check("stuck again later: restarted again (at most every 10 min)", done == ["page"], str(done))
+
+reset()
+world["agent"].update(displayStuckAt=world["t"] - 30, inCall=True)
+state = {}
+check("page stuck but a call in progress: wait", minutes(5, state) == [])
+world["agent"]["inCall"] = False
+check("... restarted once the call is over", minutes(1, state) == ["page"])
+
+reset()
+world["agent"]["displayStuckAt"] = None
+state = {}
+check("never stuck (or agent of an older version): nothing done", minutes(30, state) == [])
+
+reset()
+world["agent"]["displayStuckAt"] = "yesterday"
+state = {}
+check("unexpected value: ignored", minutes(5, state) == [])
+
 # ------------------------------------------------------------------
 reset()
 world["agent"].update(registered=False)

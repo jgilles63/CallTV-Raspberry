@@ -44,7 +44,7 @@ Le Raspberry Pi est branché sur la télévision de la personne appelée. Il fai
 | `ColdStart/chromium-autolaunch.service` | Service systemd qui lance Chromium au démarrage |
 | `ColdStart/tv-control.service` | Service systemd de l'agent Python |
 | `install.sh` | **Installation ou mise à jour en une commande** (voir Installation) |
-| `selfheal.py` | Réparation automatique (Wi-Fi, page TV, agent, redémarrage de nuit), en root chaque minute |
+| `selfheal.py` | Réparation automatique (Wi-Fi, page TV déconnectée ou bloquée pendant un appel, agent, redémarrage de nuit), en root chaque minute |
 | `diagnostics.py`, `diagnose.sh` | État des lieux (demandé aussi par le serveur : `node admin.js diagnose`) |
 | `update.sh` | **Mise à jour à distance** vers une version signée (voir « Mises à jour à distance ») |
 | `ColdStart/allowed_signers` | Clé publique qui signe les versions (installée une fois sur le Raspberry) |

@@ -64,6 +64,9 @@ class TVControlAgent:
         # Current call state
         self.call_window = False
         self.current_call_id = None
+        # Call accepted and in progress (after the click), or None: the
+        # self-repair never acts during a call (agent_state.json, inCall)
+        self.active_call_id = None
         # Call made FROM this TV ("call from my own TV"), or None
         self.outgoing_call_id = None
         self.alert_sound = AlertSound()
@@ -72,6 +75,9 @@ class TVControlAgent:
         # TV page connected to the server (told by the server in its answer
         # to the heartbeat), or None if unknown (server of an older version)
         self.display_connected = None
+        # Time when the server said the TV page was stuck during a call
+        # (display_stuck): selfheal.py restarts Chromium after it
+        self.display_stuck_at = None
         self.alive_interval = 30
 
     # ---------------------------------------------------------
@@ -139,6 +145,9 @@ class TVControlAgent:
         finally:
             self.registered = False
             self.display_connected = None
+            # Connection lost: the "hangup" of the accepted call may never
+            # come (the server ends the calls of a disconnected agent)
+            self.active_call_id = None
             heartbeat.cancel()
             try:
                 await heartbeat
@@ -271,6 +280,9 @@ class TVControlAgent:
 
         elif msg_type == "call_accepted_sync":
             await self.handle_call_accepted_sync(data)
+
+        elif msg_type == "display_stuck":
+            self.handle_display_stuck(data)
 
         elif msg_type == "diagnose_request":
             # In a task: the checks take a few seconds, the calls must not wait
@@ -444,6 +456,12 @@ class TVControlAgent:
             await asyncio.to_thread(tv_return)
             return
 
+        # End of the accepted call: the conversation is over
+        if hangup_call_id and hangup_call_id == self.active_call_id:
+            self.active_call_id = None
+            print("✅ Call ended")
+            return
+
         if hangup_call_id != self.current_call_id:
             print("ℹ️ Hangup ignored: not about the current call")
             return
@@ -473,11 +491,25 @@ class TVControlAgent:
 
         self.call_window = False
         self.current_call_id = None
+        self.active_call_id = call_id
 
         print("✅ Sync done")
         # The CEC commands take several seconds: run them outside the
         # asyncio loop so that the WebSocket keeps answering meanwhile.
         await asyncio.to_thread(tv_on_and_accept)
+
+    def handle_display_stuck(self, data):
+        """
+        The TV page did not start the video of the accepted call (camera
+        blocked, page frozen): the server ended the call. selfheal.py restarts
+        Chromium (agent_state.json, displayStuckAt) once no call is in progress.
+        """
+        print(f"⚠️ TV page stuck during the call {data.get('callId')} ({data.get('reason')}): "
+              "the screen will be restarted")
+        if data.get("callId") == self.active_call_id:
+            self.active_call_id = None
+        self.display_stuck_at = time.time()
+        self.write_agent_state()
 
     # ---------------------------------------------------------
     # Accepting: mouse or SIGUSR1
@@ -511,6 +543,7 @@ class TVControlAgent:
         # second click or signal cannot trigger a second acceptance.
         self.call_window = False
         self.current_call_id = None
+        self.active_call_id = call_id
         self.cancel_call_timeout()
 
         self.alert_sound.stop()
@@ -644,8 +677,10 @@ class TVControlAgent:
             "time": time.time(),
             "registered": self.registered,
             "rejected": self.rejected_by_server,
-            "inCall": bool(self.call_window or self.current_call_id or self.outgoing_call_id),
+            "inCall": bool(self.call_window or self.current_call_id or self.active_call_id
+                           or self.outgoing_call_id),
             "displayConnected": self.display_connected,
+            "displayStuckAt": self.display_stuck_at,
         }
 
     def write_agent_state(self):

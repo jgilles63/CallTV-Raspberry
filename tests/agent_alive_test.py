@@ -78,6 +78,35 @@ async def main():
     check("ringing: inCall", state()["inCall"] is True)
     a.call_window = False
 
+    # accepted call: still "in call" until its hangup (selfheal.py must not
+    # restart anything during the conversation)
+    sent = []
+
+    async def send_message(data):
+        sent.append(data)
+    a.send_message = send_message
+    a.call_window, a.current_call_id = True, "call-3"
+    await a.on_mouse_click_async()
+    await asyncio.sleep(0.08)
+    check("accepted with the mouse: accept sent, still inCall",
+          sent[-1] == {"type": "accept_call", "callId": "call-3"} and a.active_call_id == "call-3" and state()["inCall"] is True)
+    await a.handle_message({"type": "hangup", "callId": "call-3"})
+    await asyncio.sleep(0.08)
+    check("hangup of the accepted call: call over", a.active_call_id is None and state()["inCall"] is False)
+
+    a.call_window, a.current_call_id = True, "call-4"
+    await a.handle_message({"type": "call_accepted_sync", "callId": "call-4"})
+    check("accepted from the TV page (sync): inCall", a.active_call_id == "call-4" and a.agent_state()["inCall"] is True)
+    await a.handle_message({"type": "hangup", "callId": "other-call"})
+    check("hangup of another call: the accepted call goes on", a.active_call_id == "call-4")
+
+    # TV page stuck during the call (told by the server)
+    check("never stuck: displayStuckAt empty", state()["displayStuckAt"] is None)
+    await a.handle_message({"type": "display_stuck", "callId": "call-4", "reason": "no_answer"})
+    s = state()
+    check("page stuck: time written at once for selfheal.py, call over",
+          isinstance(s["displayStuckAt"], float) and s["inCall"] is False and a.active_call_id is None)
+
     a.rejected_by_server = True
     await asyncio.sleep(0.08)
     check("refused by the server: told", state()["rejected"] is True)
@@ -100,8 +129,10 @@ async def main():
     a.ws = FakeWs()
     a.registered = True
     a.display_connected = True
+    a.active_call_id = "call-5"
     await a.run_session()
     check("connection lost: not registered, page state unknown", a.registered is False and a.display_connected is None)
+    check("connection lost: the accepted call is forgotten (its hangup may never come)", a.active_call_id is None)
 
     # state file not writable: no crash
     cfg.BASE_DIR = tmp / "missing" / "folder"

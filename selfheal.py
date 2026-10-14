@@ -14,6 +14,9 @@ What it repairs, never during a call:
   nothing is done: restarting the Raspberry would not help.
 - TV page not connected to the server while the agent is: Chromium restarted
   after 3 min (at most every 10 min); Raspberry restarted after 15 min.
+- TV page stuck during a call (camera blocked or page frozen: told by the
+  server to the agent, displayStuckAt in agent_state.json): Chromium restarted
+  once the call is over (at most every 10 min, like the page above).
 - Agent not connected while the server is reachable (and not refused by the
   server): agent restarted after 10 min (at most every 10 min).
 - Every night at NIGHTLY_REBOOT_HOUR (config.py, 4 h by default; None = never):
@@ -253,6 +256,14 @@ def check_once(app_dir, state):
         record(state, "network", "wifi", t)
         act(["systemctl", "restart", "NetworkManager"])
         return "network"
+
+    # Stuck after the last restart of the page: not repaired yet
+    stuck_at = agent.get("displayStuckAt") if agent else None
+    if (isinstance(stuck_at, (int, float)) and stuck_at > state.get("last_page", 0)
+            and allowed(state, "page", PAGE_RESTART_EVERY, t)):
+        record(state, "page", "page stuck during a call", t)
+        act(["systemctl", "restart", "chromium-autolaunch.service"])
+        return "page"
 
     if page_down >= REBOOT_AFTER and (action := reboot("page")):
         return action

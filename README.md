@@ -43,7 +43,7 @@ programs** that connect to the server with the same identity:
 | `ColdStart/chromium-autolaunch.service` | systemd service that starts Chromium at boot |
 | `ColdStart/tv-control.service` | systemd service of the Python agent |
 | `install.sh` | **Installation or update in one command** (see Installation) |
-| `selfheal.py` | Self-repair (Wi-Fi, TV page, agent, nightly restart), run as root every minute |
+| `selfheal.py` | Self-repair (Wi-Fi, TV page not connected or stuck during a call, agent, nightly restart), run as root every minute |
 | `diagnostics.py`, `diagnose.sh` | Health report (also asked by the server: `node admin.js diagnose`) |
 | `update.sh` | **Remote update** to a signed version (see "Remote updates") |
 | `ColdStart/allowed_signers` | Public key that signs the versions (installed once on the Raspberry) |
