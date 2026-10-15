@@ -124,7 +124,7 @@ décroché.
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.2.3        # la dernière version (voir « Releases »)
+   git checkout v0.2.4        # la dernière version (voir « Releases »)
    ```
    (`sudo apt install -y git` si git manque.) Ce dossier contient seulement le projet
    téléchargé : le script installe les programmes dans `~/AppelerMamie`.

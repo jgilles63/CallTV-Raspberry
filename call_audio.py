@@ -205,7 +205,9 @@ def default_sink_name():
     objects = pipewire_objects()
     name = None
     for meta in objects_of_type(objects, "Metadata"):
-        if props(meta).get("metadata.name") != "default":
+        # pw-dump gives the props of a metadata object at its top level (no "info")
+        meta_props = meta.get("props") or props(meta)
+        if meta_props.get("metadata.name") != "default":
             continue
         for entry in meta.get("metadata") or []:
             if entry.get("key") == "default.audio.sink":

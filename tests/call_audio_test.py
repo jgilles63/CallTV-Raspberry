@@ -54,7 +54,8 @@ def sink(node_id, dev_id, name, description):
 
 
 def default_meta(name):
-    return {"id": 30, "type": "PipeWire:Interface:Metadata", "info": {"props": {"metadata.name": "default"}},
+    # As in pw-dump: the props of a metadata object are at its top level (seen on a Pi, v0.2.3)
+    return {"id": 30, "type": "PipeWire:Interface:Metadata", "props": {"metadata.name": "default"},
             "metadata": [{"subject": 0, "key": "default.configured.audio.sink", "value": {"name": "x"}},
                          {"subject": 0, "key": "default.audio.sink", "value": {"name": name}}]}
 
