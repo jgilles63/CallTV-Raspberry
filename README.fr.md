@@ -22,8 +22,15 @@ Le Raspberry Pi est branché sur la télévision de la personne appelée. Il fai
 - **webcam avec micro** (utilisée par Chromium) ;
 - **souris USB** servant de bouton « décrocher » (dans une coque imprimée en 3D) ;
 - **enceinte USB** pour la sonnerie (détectée automatiquement : n'importe quel modèle, n'importe
-  quel port USB) ; le son de l'appel, lui, sort par la TV (HDMI) ;
+  quel port USB) ; le son de l'appel, lui, sort par la TV (HDMI) si c'est une TV qui répond en
+  HDMI-CEC, sinon par l'enceinte USB (écran d'ordinateur sans son) ;
 - connexion Internet (serveur + synthèse vocale Google).
+
+Testé (15/10/2026, installation complète depuis une carte SD vierge) sur un **Raspberry Pi 4
+Model B** avec **Raspberry Pi OS 64 bits avec bureau** (Debian 13 « trixie »), Chromium 154,
+une webcam USB avec micro, une enceinte USB et une souris sans fil. Un écran sans HDMI-CEC
+fonctionne aussi : il faut seulement l'allumer soi-même (l'état des lieux signale « TV vue par
+HDMI-CEC : unknown »).
 
 ## Fichiers
 
@@ -36,6 +43,7 @@ Le Raspberry Pi est branché sur la télévision de la personne appelée. Il fai
 | `identity.py` | Lit `identity.json` (identifiant + secret de l'appareil) |
 | `tts_audio.py` | Génère l'annonce vocale, la mixe avec la sonnerie, la joue |
 | `tv_control.py` | Pilote la TV en HDMI-CEC (`cec-client`) |
+| `call_audio.py` | Choisit la sortie du son de l'appel : la TV (HDMI) ou l'enceinte USB |
 | `start_tv_control.sh` | Lance l'agent dans son environnement virtuel Python |
 | `ringtone.mp3` | Sonnerie : « game-music1 » de Nia Mi ([OpenGameArt](https://opengameart.org/node/153251)), domaine public (CC0) ; convertie en `.wav` et répétée pendant tout l'appel |
 | `ColdStart/setup_identity.py` | **À lancer une fois** : crée l'identité de l'appareil et un QR code |
@@ -94,6 +102,10 @@ de l'agent sont en anglais.
    - le bouton **Répondre** de `receveur.html` (synchronisé par le serveur).
 4. **Allumage de la TV** (`tv_control.py`) : `on 0` pour allumer, puis `as` (le Raspberry
    devient la source active, port 3) répété 5 fois, car certaines TV ne répondent pas du premier coup.
+   Entre les deux, `pow 0` demande l'état de la TV : si une TV répond et accepte le son (ELD), le
+   son de l'appel passe par la TV (`call_audio.py` rallume la sortie HDMI si PipeWire l'a coupée
+   parce que la TV était en veille au démarrage du Pi) ; sinon il passe par l'enceinte USB. La
+   sonnerie et l'annonce restent toujours sur l'enceinte USB.
 5. **Sans réponse** au bout de 30 s, l'agent raccroche (`no_answer`).
 
 La caméra n'est **pas** gérée par Python : c'est `receveur.html` qui l'active au moment du
@@ -112,7 +124,7 @@ décroché.
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.1.0        # la dernière version
+   git checkout v0.2.3        # la dernière version (voir « Releases »)
    ```
    (`sudo apt install -y git` si git manque.) Ce dossier contient seulement le projet
    téléchargé : le script installe les programmes dans `~/AppelerMamie`.
@@ -234,6 +246,7 @@ sans redémarrage. Le serveur retient alors le secret de l'appareil.
 | `SERVER_URL` | `wss://appelermami.fr` | Adresse de votre serveur |
 | `MOUSE_DEVICE` | `None` (détection automatique) | À renseigner seulement pour imposer un appareil précis (plusieurs souris branchées) : chemin stable de `ls -l /dev/input/by-id/` |
 | `AUDIO_DEVICE` | `None` (détection automatique) | Enceinte de la sonnerie : la première enceinte USB trouvée. À renseigner seulement pour imposer une carte précise (nom entre crochets dans `aplay -l`) |
+| `CALL_AUDIO_OUTPUT` | `"auto"` | Sortie du son de l'appel : la TV (HDMI) si une TV répond en HDMI-CEC et accepte le son, sinon l'enceinte USB. `"hdmi"` ou `"usb"` pour l'imposer |
 | `MOUSE_RETRY_DELAY` | `5` | Délai entre deux recherches de la souris quand elle est absente (secondes) |
 | `HDMI_PORT` | `3` | Entrée HDMI de la TV où est branché le Raspberry (la TV y bascule au décroché). Vérification : `echo "scan" \| cec-client -s -d 1` montre le Raspberry à l'adresse `3.0.0.0` pour l'entrée 3 |
 | `RINGTONE_PATH` | `~/AppelerMamie/ringtone.wav` | Autre sonnerie : copier son `.mp3` dans `~/AppelerMamie`, relancer `install.sh` (il fait le `.wav`), puis indiquer ici le chemin du `.wav`. Conservé par `install.sh` ; si le fichier manque, la sonnerie du projet est jouée |

@@ -21,8 +21,14 @@ programs** that connect to the server with the same identity:
 - **webcam with a microphone** (used by Chromium);
 - **USB mouse** used as the "answer" button (inside a 3D-printed case);
 - **USB speaker** for the ringtone (detected automatically: any model, any USB port); the
-  sound of the call itself comes out of the TV (HDMI);
+  sound of the call itself comes out of the TV (HDMI) when it is a TV answering HDMI-CEC,
+  otherwise out of the USB speaker (computer monitor without sound);
 - Internet connection (server + Google text-to-speech).
+
+Tested (15/10/2026, full install from a blank SD card) on a **Raspberry Pi 4 Model B** with
+**Raspberry Pi OS 64-bit with desktop** (Debian 13 "trixie"), Chromium 154, a USB webcam with
+microphone, a USB speaker and a wireless mouse. A monitor without HDMI-CEC also works: it just
+has to be turned on by hand (the health report shows "TV seen through HDMI-CEC: unknown").
 
 ## Files
 
@@ -35,6 +41,7 @@ programs** that connect to the server with the same identity:
 | `identity.py` | Reads `identity.json` (identifier + secret of the device) |
 | `tts_audio.py` | Generates the voice announcement, mixes it with the ringtone, plays it |
 | `tv_control.py` | Controls the TV through HDMI-CEC (`cec-client`) |
+| `call_audio.py` | Chooses the output of the call sound: the TV (HDMI) or the USB speaker |
 | `start_tv_control.sh` | Starts the agent in its Python virtual environment |
 | `ringtone.mp3` | Ringtone: "game-music1" by Nia Mi ([OpenGameArt](https://opengameart.org/node/153251)), public domain (CC0); converted to `.wav` and repeated over the whole call |
 | `ColdStart/setup_identity.py` | **Run once**: creates the device identity and a QR code |
@@ -93,7 +100,10 @@ English.
    - the **Answer** button of `receveur.html` (synchronized by the server).
 4. **Turning the TV on** (`tv_control.py`): `on 0` to turn it on, then `as` (the Raspberry
    becomes the active source, port 3) repeated 5 times, because some TVs do not answer the
-   first attempt.
+   first attempt. In between, `pow 0` asks the state of the TV: if a TV answers and accepts
+   sound (ELD), the call sound goes to the TV (`call_audio.py` turns the HDMI output back on if
+   PipeWire turned it off because the TV was in standby when the Pi started); otherwise it goes
+   to the USB speaker. The ringtone and the announcement always stay on the USB speaker.
 5. **No answer** after 30 s: the agent hangs up (`no_answer`).
 
 The camera is **not** handled by Python: `receveur.html` starts it when the call is answered.
@@ -111,7 +121,7 @@ The camera is **not** handled by Python: `receveur.html` starts it when the call
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.1.0        # the latest version
+   git checkout v0.2.3        # the latest version (see "Releases")
    ```
    (`sudo apt install -y git` if git is missing.) This folder only holds the downloaded
    project: the script installs the programs into `~/AppelerMamie`.
@@ -230,6 +240,7 @@ their own, without a restart. The server then pins the device secret.
 | `SERVER_URL` | `wss://appelermami.fr` | Address of your server |
 | `MOUSE_DEVICE` | `None` (automatic detection) | Only set it to force a specific device (several mice plugged in): stable path from `ls -l /dev/input/by-id/` |
 | `AUDIO_DEVICE` | `None` (automatic detection) | Ringtone speaker: the first USB speaker found. Only set it to force a specific card (name between brackets in `aplay -l`) |
+| `CALL_AUDIO_OUTPUT` | `"auto"` | Output of the call sound: the TV (HDMI) if a TV answers HDMI-CEC and accepts sound, otherwise the USB speaker. `"hdmi"` or `"usb"` to force it |
 | `MOUSE_RETRY_DELAY` | `5` | Delay between two searches for the mouse when it is missing (seconds) |
 | `HDMI_PORT` | `3` | HDMI input of the TV the Raspberry is plugged into (the TV switches to it when a call is accepted). Check: `echo "scan" \| cec-client -s -d 1` shows the Raspberry at address `3.0.0.0` for input 3 |
 | `RINGTONE_PATH` | `~/AppelerMamie/ringtone.wav` | Another ringtone: copy its `.mp3` into `~/AppelerMamie`, run `install.sh` again (it makes the `.wav`), then give the path of the `.wav` here. Kept by `install.sh`; if the file is missing, the ringtone of the project is played |

@@ -22,8 +22,15 @@ La Raspberry Pi está conectada al televisor de la persona que recibe la llamada
 - **webcam con micrófono** (usada por Chromium);
 - **ratón USB** que sirve de botón para «responder» (dentro de una carcasa impresa en 3D);
 - **altavoz USB** para el tono de llamada (detectado automáticamente: cualquier modelo, cualquier
-  puerto USB); el sonido de la llamada sale por el televisor (HDMI);
+  puerto USB); el sonido de la llamada sale por el televisor (HDMI) si es un televisor que
+  responde por HDMI-CEC, si no por el altavoz USB (monitor de ordenador sin sonido);
 - conexión a Internet (servidor + síntesis de voz de Google).
+
+Probado (15/10/2026, instalación completa desde una tarjeta SD vacía) en una **Raspberry Pi 4
+Model B** con **Raspberry Pi OS de 64 bits con escritorio** (Debian 13 «trixie»), Chromium 154,
+una webcam USB con micrófono, un altavoz USB y un ratón inalámbrico. Una pantalla sin HDMI-CEC
+también funciona: solo hay que encenderla a mano (el diagnóstico muestra «TV vista por
+HDMI-CEC: unknown»).
 
 ## Archivos
 
@@ -36,6 +43,7 @@ La Raspberry Pi está conectada al televisor de la persona que recibe la llamada
 | `identity.py` | Lee `identity.json` (identificador + secreto del dispositivo) |
 | `tts_audio.py` | Genera el anuncio de voz, lo mezcla con el tono y lo reproduce |
 | `tv_control.py` | Controla el televisor mediante HDMI-CEC (`cec-client`) |
+| `call_audio.py` | Elige la salida del sonido de la llamada: el televisor (HDMI) o el altavoz USB |
 | `start_tv_control.sh` | Inicia el agente en su entorno virtual de Python |
 | `ringtone.mp3` | Tono: «game-music1» de Nia Mi ([OpenGameArt](https://opengameart.org/node/153251)), dominio público (CC0); convertido a `.wav` y repetido durante toda la llamada |
 | `ColdStart/setup_identity.py` | **Ejecutar una vez**: crea la identidad del dispositivo y un código QR |
@@ -94,7 +102,11 @@ del agente están en inglés.
    - el botón **Responder** de `receveur.html` (sincronizado por el servidor).
 4. **Encendido del televisor** (`tv_control.py`): `on 0` para encenderlo y después `as` (la
    Raspberry pasa a ser la fuente activa, puerto 3) repetido 5 veces, porque algunos
-   televisores no responden al primer intento.
+   televisores no responden al primer intento. Entre medias, `pow 0` pregunta el estado del
+   televisor: si un televisor responde y acepta sonido (ELD), el sonido de la llamada sale por el
+   televisor (`call_audio.py` vuelve a activar la salida HDMI si PipeWire la apagó porque el
+   televisor estaba en espera al arrancar la Pi); si no, sale por el altavoz USB. El tono y el
+   anuncio siempre siguen en el altavoz USB.
 5. **Sin respuesta** después de 30 s, el agente cuelga (`no_answer`).
 
 La cámara **no** la gestiona Python: la activa `receveur.html` en el momento de responder.
@@ -112,7 +124,7 @@ La cámara **no** la gestiona Python: la activa `receveur.html` en el momento de
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.1.0        # la última versión
+   git checkout v0.2.3        # la última versión (ver «Releases»)
    ```
    (`sudo apt install -y git` si falta git.) Esta carpeta solo contiene el proyecto
    descargado: el script instala los programas en `~/AppelerMamie`.
@@ -234,6 +246,7 @@ solos, sin reiniciar. El servidor guarda entonces el secreto del dispositivo.
 | `SERVER_URL` | `wss://appelermami.fr` | Dirección de tu servidor |
 | `MOUSE_DEVICE` | `None` (detección automática) | Solo hay que indicarlo para imponer un dispositivo concreto (varios ratones conectados): ruta estable de `ls -l /dev/input/by-id/` |
 | `AUDIO_DEVICE` | `None` (detección automática) | Altavoz del tono: el primer altavoz USB encontrado. Solo hay que indicarlo para imponer una tarjeta concreta (nombre entre corchetes en `aplay -l`) |
+| `CALL_AUDIO_OUTPUT` | `"auto"` | Salida del sonido de la llamada: el televisor (HDMI) si un televisor responde por HDMI-CEC y acepta sonido, si no el altavoz USB. `"hdmi"` o `"usb"` para imponerla |
 | `MOUSE_RETRY_DELAY` | `5` | Tiempo entre dos búsquedas del ratón cuando no está (segundos) |
 | `HDMI_PORT` | `3` | Entrada HDMI del televisor donde está conectada la Raspberry (el televisor cambia a ella al descolgar). Comprobación: `echo "scan" \| cec-client -s -d 1` muestra la Raspberry en la dirección `3.0.0.0` para la entrada 3 |
 | `RINGTONE_PATH` | `~/AppelerMamie/ringtone.wav` | Otro tono: copia su `.mp3` en `~/AppelerMamie`, vuelve a lanzar `install.sh` (crea el `.wav`) e indica aquí la ruta del `.wav`. `install.sh` lo conserva; si falta el archivo, suena el tono del proyecto |

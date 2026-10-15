@@ -279,7 +279,7 @@ import sys
 
 new_path, old_path, lang, greeting_set, greeting = sys.argv[1:6]
 KEPT = ("SERVER_URL", "UNAUTHORIZED_RETRY_DELAY", "MOUSE_DEVICE", "MOUSE_RETRY_DELAY",
-        "HDMI_PORT", "AUDIO_DEVICE", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
+        "HDMI_PORT", "AUDIO_DEVICE", "CALL_AUDIO_OUTPUT", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
         "MAX_CALLER_NAME_LENGTH", "VOICE_VOLUME", "RINGTONE_VOLUME", "NIGHTLY_REBOOT_HOUR",
         "GREETING_NAME")
 # Greeting of the announcement before GREETING_NAME existed

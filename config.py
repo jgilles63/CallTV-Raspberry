@@ -66,8 +66,15 @@ HDMI_PORT = 3
 # only heard if the TV is on).
 # To force a specific card, give its ALSA name as shown by `aplay -l`
 # (the word between brackets in /proc/asound/cards), e.g. "AUDIO".
-# NB: the sound of the call itself is played by Chromium on the default output.
+# NB: the sound of the call itself is chosen by CALL_AUDIO_OUTPUT below.
 AUDIO_DEVICE = None
+
+# --- Output of the call sound (the voice of the caller, call_audio.py) ---
+# "auto" = on the TV (HDMI) when a TV answers HDMI-CEC and accepts sound,
+# otherwise on the USB speaker above (computer monitor without sound, TV
+# without CEC). Chosen again at every call, after the TV is turned on.
+# "hdmi" or "usb" = always this output.
+CALL_AUDIO_OUTPUT = "auto"
 
 # --- Nightly restart of the Raspberry (self-repair, selfheal.py) ---
 # Hour (0 to 23, local time) at which the Raspberry restarts every night,

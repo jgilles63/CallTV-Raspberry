@@ -1,5 +1,6 @@
 # Tests the HDMI input used by the real tv_control.py (config.HDMI_PORT),
-# with simulated cec-client commands (subprocess.run) and no waiting.
+# with simulated cec-client commands (subprocess.run) and no waiting, and the
+# CEC answer given to the choice of the call sound output (call_audio.py).
 import importlib
 import subprocess
 import sys
@@ -18,15 +19,30 @@ def check(label, condition, detail=""):
     print(f"{'OK ' if condition else 'KO '} {label} {detail}")
 
 
-def run_with_port(port):
-    """Loads tv_control with config.HDMI_PORT = port and runs the accept sequence."""
+routes = []
+audio = types.ModuleType("call_audio")
+audio.route_call_audio = routes.append
+sys.modules["call_audio"] = audio
+
+
+def run_with_port(port, power="on"):
+    """
+    Loads tv_control with config.HDMI_PORT = port and runs the accept sequence.
+    power: answer of the TV to "pow 0" (None = no answer, like a computer monitor).
+    """
     cfg = types.ModuleType("config")
     if port is not None:
         cfg.HDMI_PORT = port
     sys.modules["config"] = cfg
     commands = []
+    answer = f"power status: {power}\n" if power else "waiting for input\n"
+
+    def fake_run(cmd, shell=False, **kwargs):
+        commands.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout=answer if "pow 0" in cmd else "", stderr="")
+
     real_run, real_sleep = subprocess.run, __import__("time").sleep
-    subprocess.run = lambda cmd, shell=False: commands.append(cmd)
+    subprocess.run = fake_run
     __import__("time").sleep = lambda s: None
     try:
         sys.modules.pop("tv_control", None)
@@ -34,8 +50,8 @@ def run_with_port(port):
         threads = []
         real_thread = tv_control.threading.Thread
 
-        def thread(target, daemon):
-            t = real_thread(target=target, daemon=daemon)
+        def thread(target, daemon, args=()):
+            t = real_thread(target=target, daemon=daemon, args=args)
             threads.append(t)
             return t
 
@@ -58,13 +74,21 @@ check("config.py: HDMI_PORT = 3 by default", "\nHDMI_PORT = 3\n" in real_config)
 
 cmds = run_with_port(3)
 check("port 3: TV turned on first", cmds[0] == 'echo "on 0" | cec-client -s -d 1', cmds[:1])
+check("port 3: then its power status asked (is it a TV?)", cmds[1] == 'echo "pow 0" | cec-client -s -d 1', cmds[:2])
+check("TV answering CEC: call sound routed with tv_present=True", routes == [True], routes)
 check("port 3: 'as' sent 5 times on port 3",
       cmds.count('echo "as" | cec-client -s -d 1 -p 3') == 5)
 check("port 3: then 'is' (switch thread) and 'is' (tv_return)",
       cmds.count('echo "is" | cec-client -s -d 1') == 2)
-check("port 3: same commands as before the setting existed",
-      cmds == ['echo "on 0" | cec-client -s -d 1'] + ['echo "as" | cec-client -s -d 1 -p 3'] * 5
+check("port 3: same commands as before the setting existed (plus the power status)",
+      cmds == ['echo "on 0" | cec-client -s -d 1', 'echo "pow 0" | cec-client -s -d 1']
+      + ['echo "as" | cec-client -s -d 1 -p 3'] * 5
       + ['echo "is" | cec-client -s -d 1'] * 2)
+
+for power, expected in (("standby", True), ("in", True), ("unknown", False), (None, False)):
+    routes.clear()
+    run_with_port(3, power)
+    check(f"power status {power!r}: tv_present={expected}", routes == [expected], routes)
 
 cmds = run_with_port(2)
 check("port 2: 'as' sent on port 2", cmds.count('echo "as" | cec-client -s -d 1 -p 2') == 5

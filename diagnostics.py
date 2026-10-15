@@ -295,6 +295,14 @@ def check_microphone():
     return check("microphone", "ok" if names else "fail", ", ".join(names) or "-")
 
 
+def check_call_audio():
+    """Current default output of PipeWire: where the call sound is played (call_audio.py)."""
+    from call_audio import default_sink_name
+    name = default_sink_name()
+    mode = getattr(config, "CALL_AUDIO_OUTPUT", "auto")
+    return check("callAudio", "info" if name else "warn", f"{name or '?'} (CALL_AUDIO_OUTPUT={mode})")
+
+
 def check_speaker():
     from tts_audio import find_ringing_card
     card = find_ringing_card()
@@ -409,7 +417,7 @@ def run_checks(skip_cec=False):
         safe(check_selfheal), safe(check_chromium_version),
         safe(check_server), safe(check_interfaces), safe(check_wifi), safe(check_wifi_powersave),
         safe(check_hdmi), safe(check_cec, skip_cec),
-        safe(check_camera), safe(check_microphone), safe(check_speaker), safe(check_mouse),
+        safe(check_camera), safe(check_microphone), safe(check_speaker), safe(check_call_audio), safe(check_mouse),
         safe(check_disk), safe(check_memory), safe(check_temperature), safe(check_power),
     ]
     return {
