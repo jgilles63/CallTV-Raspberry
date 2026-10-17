@@ -124,7 +124,7 @@ La cámara **no** la gestiona Python: la activa `receveur.html` en el momento de
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.2.4        # la última versión (ver «Releases»)
+   git checkout v0.2.5        # la última versión (ver «Releases»)
    ```
    (`sudo apt install -y git` si falta git.) Esta carpeta solo contiene el proyecto
    descargado: el script instala los programas en `~/AppelerMamie`.

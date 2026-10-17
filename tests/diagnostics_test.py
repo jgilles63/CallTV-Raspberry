@@ -183,6 +183,17 @@ COMMANDS["iw dev wlan0 get power_save"] = "Power save: off\n"
 check("Wi-Fi power saving off: ok", d.check_wifi_powersave()["status"] == "ok")
 del COMMANDS["iw dev wlan0 get power_save"]
 check("no Wi-Fi (iw missing): info", d.check_wifi_powersave()["status"] == "info")
+# diagnose.sh run by hand: /usr/sbin is not in the PATH of the user (seen on a Pi, 17/10/2026)
+real_which, real_exists = d.shutil.which, d.os.path.exists
+d.shutil.which = lambda name: None
+d.os.path.exists = lambda path: path == "/usr/sbin/iw"
+COMMANDS["/usr/sbin/iw dev wlan0 get power_save"] = "Power save: off\n"
+check("iw not in the PATH: found in /usr/sbin", d.check_wifi_powersave() ==
+      {"id": "network.powersave", "status": "ok", "value": "off"})
+d.os.path.exists = lambda path: False
+check("iw nowhere: info", d.check_wifi_powersave()["status"] == "info")
+d.shutil.which, d.os.path.exists = real_which, real_exists
+del COMMANDS["/usr/sbin/iw dev wlan0 get power_save"]
 
 # --- states that fail ---
 FILES["/sys/class/drm/card1-HDMI-A-1/status"] = "disconnected\n"

@@ -70,6 +70,9 @@ USB_CAMERA_DRIVER = "uvcvideo"
 
 COMMAND_TIMEOUT = 15
 
+# Places of iw when it is not in the PATH (diagnose.sh run by a user)
+IW_PATHS = ("/usr/sbin/iw", "/sbin/iw")
+
 
 def run(command, timeout=COMMAND_TIMEOUT, shell=False):
     """Runs a command and returns its output (stdout + stderr), or None if it fails to run."""
@@ -224,9 +227,16 @@ def check_wifi():
     return check("network.wifi", "info", "-")
 
 
+def iw_command():
+    """iw is in /usr/sbin: not in the PATH of a user who runs diagnose.sh by hand."""
+    if shutil.which("iw"):
+        return "iw"
+    return next((path for path in IW_PATHS if os.path.exists(path)), "iw")
+
+
 def check_wifi_powersave():
     """Wi-Fi power saving: "off" expected (it causes disconnections on the Raspberry)."""
-    output = run(["iw", "dev", "wlan0", "get", "power_save"])
+    output = run([iw_command(), "dev", "wlan0", "get", "power_save"])
     match = re.search(r"Power save:\s*(\w+)", output or "")
     if not match:
         return check("network.powersave", "info", "-")
