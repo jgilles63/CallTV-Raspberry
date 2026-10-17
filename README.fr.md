@@ -18,7 +18,7 @@ Le Raspberry Pi est branché sur la télévision de la personne appelée. Il fai
 ## Matériel
 
 - Raspberry Pi avec un environnement graphique (X11, écran `:0`) ;
-- télévision compatible **HDMI-CEC**, avec le Raspberry branché sur une entrée HDMI (**HDMI 3** par défaut, réglage `HDMI_PORT` de `config.py`) ;
+- télévision compatible **HDMI-CEC**, avec le Raspberry branché sur une entrée HDMI (l'entrée est lue sur la TV elle-même ; `HDMI_PORT` de `config.py` seulement si la TV ne la donne pas) ;
 - **webcam avec micro** (utilisée par Chromium) ;
 - **souris USB** servant de bouton « décrocher » (dans une coque imprimée en 3D) ;
 - **enceinte USB** pour la sonnerie (détectée automatiquement : n'importe quel modèle, n'importe
@@ -42,8 +42,10 @@ HDMI-CEC : unknown »).
 | `i18n.py` | Traductions (fr, en, es) : annonce vocale, messages de l'agent et des scripts d'installation |
 | `identity.py` | Lit `identity.json` (identifiant + secret de l'appareil) |
 | `tts_audio.py` | Génère l'annonce vocale, la mixe avec la sonnerie, la joue |
-| `tv_control.py` | Pilote la TV en HDMI-CEC (`cec-client`) |
+| `tv_control.py` | Pilote la TV en HDMI-CEC (`cec-ctl` du noyau Linux) : l'allume, change son entrée, demande son état ; garde le Raspberry déclaré à la TV comme lecteur |
+| `remote_keys.py` | **Télécommande de la TV** par HDMI-CEC : le noyau transforme ses touches en clavier (`vc4-hdmi-0`), lu par l'agent : flèches, OK, Retour |
 | `call_audio.py` | Choisit la sortie du son de l'appel : la TV (HDMI) ou l'enceinte USB |
+| `display_mode.py` | **Résolution de l'écran** : une TV 4K est passée en 1920 × 1080 (jusqu'à 60 Hz), bien plus léger pour le Raspberry Pi 4 pendant un appel vidéo ; les écrans de 1920 pixels ou moins ne sont jamais changés (`wlr-randr`) |
 | `start_tv_control.sh` | Lance l'agent dans son environnement virtuel Python |
 | `ringtone.mp3` | Sonnerie : « game-music1 » de Nia Mi ([OpenGameArt](https://opengameart.org/node/153251)), domaine public (CC0) ; convertie en `.wav` et répétée pendant tout l'appel |
 | `ColdStart/setup_identity.py` | **À lancer une fois** : crée l'identité de l'appareil et un QR code |
@@ -99,10 +101,13 @@ de l'agent sont en anglais.
    - un **clic gauche** sur la souris (lue avec `evdev`, **détectée automatiquement** : n'importe
      quel modèle, n'importe quel port USB, retrouvée après un débranchement) ;
    - le signal **`SIGUSR1`** (`kill -USR1 <pid>`, voir `HomeAssistant/`) ;
-   - le bouton **Répondre** de `receveur.html` (synchronisé par le serveur).
-4. **Allumage de la TV** (`tv_control.py`) : `on 0` pour allumer, puis `as` (le Raspberry
-   devient la source active, port 3) répété 5 fois, car certaines TV ne répondent pas du premier coup.
-   Entre les deux, `pow 0` demande l'état de la TV : si une TV répond et accepte le son (ELD), le
+   - le bouton **Répondre** de `receveur.html` (synchronisé par le serveur) ;
+   - **OK sur la télécommande de la TV**, quand la TV affiche l'entrée du Raspberry (Retour
+     refuse ; pendant l'appel, Retour raccroche).
+4. **Allumage de la TV** (`tv_control.py`, `cec-ctl`) : `--image-view-on` pour allumer, puis
+   `--active-source` (le Raspberry devient la source active, adresse donnée par la TV, par ex.
+   `3.0.0.0` pour l'entrée 3) répété 5 fois, car certaines TV ne répondent pas du premier coup.
+   Entre les deux, `--give-device-power-status` demande l'état de la TV : si une TV répond et accepte le son (ELD), le
    son de l'appel passe par la TV (`call_audio.py` rallume la sortie HDMI si PipeWire l'a coupée
    parce que la TV était en veille au démarrage du Pi) ; sinon il passe par l'enceinte USB. La
    sonnerie et l'annonce restent toujours sur l'enceinte USB.
@@ -124,7 +129,7 @@ décroché.
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.2.5        # la dernière version (voir « Releases »)
+   git checkout v0.2.6        # la dernière version (voir « Releases »)
    ```
    (`sudo apt install -y git` si git manque.) Ce dossier contient seulement le projet
    téléchargé : le script installe les programmes dans `~/AppelerMamie`.
@@ -138,7 +143,7 @@ décroché.
 
 Le script fait tout, rien d'autre à installer ni à copier :
 
-- installe les **paquets système** (ffmpeg, cec-utils, Chromium…) et l'**environnement
+- installe les **paquets système** (ffmpeg, v4l-utils pour `cec-ctl`, Chromium…) et l'**environnement
   Python** ;
 - **copie les programmes** dans `~/AppelerMamie` et convertit la sonnerie ;
 - règle la langue, les droits de l'utilisateur (souris, TV, son), crée l'**identité** de
@@ -171,7 +176,7 @@ trouvent ce dossier automatiquement ; seul `chromium-autolaunch.service` doit ê
 ### 1. Paquets système
 
 ```bash
-sudo apt install ffmpeg alsa-utils cec-utils chromium python3-venv
+sudo apt install ffmpeg alsa-utils v4l-utils cec-utils chromium python3-venv
 ```
 
 ### 2. Environnement Python
@@ -247,8 +252,9 @@ sans redémarrage. Le serveur retient alors le secret de l'appareil.
 | `MOUSE_DEVICE` | `None` (détection automatique) | À renseigner seulement pour imposer un appareil précis (plusieurs souris branchées) : chemin stable de `ls -l /dev/input/by-id/` |
 | `AUDIO_DEVICE` | `None` (détection automatique) | Enceinte de la sonnerie : la première enceinte USB trouvée. À renseigner seulement pour imposer une carte précise (nom entre crochets dans `aplay -l`) |
 | `CALL_AUDIO_OUTPUT` | `"auto"` | Sortie du son de l'appel : la TV (HDMI) si une TV répond en HDMI-CEC et accepte le son, sinon l'enceinte USB. `"hdmi"` ou `"usb"` pour l'imposer |
+| `SCREEN_MODE` | `"1080p"` | Résolution de l'écran : une TV qui donne la 4K passe en 1920 × 1080, jusqu'à 60 Hz (appels plus fluides). `None` laisse l'écran comme la TV le veut |
 | `MOUSE_RETRY_DELAY` | `5` | Délai entre deux recherches de la souris quand elle est absente (secondes) |
-| `HDMI_PORT` | `3` | Entrée HDMI de la TV où est branché le Raspberry (la TV y bascule au décroché). Vérification : `echo "scan" \| cec-client -s -d 1` montre le Raspberry à l'adresse `3.0.0.0` pour l'entrée 3 |
+| `HDMI_PORT` | `3` | Entrée HDMI de la TV, utilisée seulement si la TV ne donne pas l'adresse du Raspberry (normalement lue sur la TV : `cec-ctl -d /dev/cec0` affiche `Physical Address : 3.0.0.0` pour l'entrée 3) |
 | `RINGTONE_PATH` | `~/AppelerMamie/ringtone.wav` | Autre sonnerie : copier son `.mp3` dans `~/AppelerMamie`, relancer `install.sh` (il fait le `.wav`), puis indiquer ici le chemin du `.wav`. Conservé par `install.sh` ; si le fichier manque, la sonnerie du projet est jouée |
 | `CALL_DURATION` | `30` | Durée de sonnerie avant abandon (secondes) |
 | `MAX_CACHED_CALLS` | `30` | Nombre de fichiers audio gardés en cache |
@@ -343,7 +349,7 @@ GitHub les lance aussi à chaque envoi (push).
 | « LE SERVEUR REFUSE LE SECRET » | `identity.json` a changé : demander à l'administrateur de retirer puis ré-autoriser l'identifiant |
 | Pas de sonnerie | Journaux de l'agent : au démarrage, « Ringtone speaker: … » indique l'enceinte trouvée ; « No USB speaker found » signifie qu'aucune enceinte USB n'est détectée (la sonnerie passe alors par la TV, entendue seulement si elle est allumée). Vérifier le branchement avec `aplay -l` |
 | Le clic ne décroche pas | Journaux de l'agent : chercher « Mouse found » ou « No mouse found ». Vérifier les droits sur `/dev/input/` (groupe `input`) et, si plusieurs souris sont branchées, imposer la bonne avec `MOUSE_DEVICE` |
-| La TV ne bascule pas | `echo "scan" \| cec-client -s -d 1` pour vérifier le CEC |
+| La TV ne bascule pas, la télécommande ne fait rien | `cec-ctl -d /dev/cec0` (adresse, « Playback » déclaré) et `cec-ctl -d /dev/cec0 --to 0 --give-device-power-status` ; vérifier que le CEC est activé dans les réglages de la TV (Anynet+, SimpLink, Bravia Sync…). Ne pas utiliser `cec-client` : en se terminant, il efface la configuration CEC (l'agent redéclare le Raspberry en 30 s au plus) |
 | Annonce vocale absente | gTTS a besoin d'Internet ; la sonnerie seule est jouée en secours |
 | L'écran TV n'est pas dans la bonne langue | Vérifier `LANGUAGE` dans `config.py`, puis redémarrer le service Chromium |
 | Script `.sh` qui échoue avec `\r` | Fin de ligne Windows : `sed -i 's/\r$//' script.sh` |

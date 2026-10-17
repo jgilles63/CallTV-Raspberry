@@ -18,6 +18,10 @@ sys.modules["config"] = cfg
 
 tv = types.ModuleType("tv_control")
 tv.tv_on_and_accept = tv.tv_return = lambda: None
+# Simulated CEC (cec-ctl, tv_control.py): adapter, physical address, TV power
+CEC = {"adapter": "/dev/cec0", "address": "3.0.0.0", "power": "standby", "asked": 0}
+tv.ensure_cec_ready = lambda: (CEC.__setitem__("asked", CEC["asked"] + 1), (CEC["adapter"], CEC["address"]))[1]
+tv.tv_power = lambda adapter=None: CEC["power"]
 sys.modules["tv_control"] = tv
 audio = types.ModuleType("tts_audio")
 audio.AlertSound = lambda: types.SimpleNamespace(play=lambda n: None, stop=lambda: None)
@@ -77,7 +81,6 @@ COMMANDS = {
     "systemctl is-active tv-control.service": "active\n",
     "systemctl is-active chromium-autolaunch.service": "failed\n",
     "chromium --version": "Chromium 140.0.7339.185 built on Debian\n",
-    'echo "pow 0" | cec-client -s -d 1': "opening a connection...\npower status: standby\n",
     "vcgencmd get_throttled": "throttled=0x50005\n",
     "systemctl is-active appelermamie-selfheal.timer": "active\n",
     "systemctl is-active appelermamie-update.path": "active\n",
@@ -150,7 +153,7 @@ check("server reachable", by_id["network.server"] == {"id": "network.server", "s
 check("interfaces up (no lo)", by_id["network.interfaces"]["value"] == "wlan0")
 check("wifi -72 dBm: warn", by_id["network.wifi"] == {"id": "network.wifi", "status": "warn", "value": "wlan0 -72 dBm"})
 check("hdmi: one connected", by_id["hdmi"]["status"] == "ok" and by_id["hdmi"]["value"] == "HDMI-A-1: connected, HDMI-A-2: disconnected")
-check("cec standby: warn, with HDMI_PORT", by_id["cec"] == {"id": "cec", "status": "warn", "value": "standby (HDMI_PORT=3)"})
+check("cec standby: warn, with the physical address", by_id["cec"] == {"id": "cec", "status": "warn", "value": "standby (3.0.0.0)"})
 check("cameras: USB webcams only, name cut by the kernel cleaned",
       by_id["camera"] == {"id": "camera", "status": "ok", "value": "HD Pro Webcam C920, Trust 1080p Full HD Webcam"})
 check("microphone: capture card only", by_id["microphone"]["value"] == "HD Pro Webcam C920" and by_id["microphone"]["status"] == "ok")
@@ -198,17 +201,19 @@ del COMMANDS["/usr/sbin/iw dev wlan0 get power_save"]
 # --- states that fail ---
 FILES["/sys/class/drm/card1-HDMI-A-1/status"] = "disconnected\n"
 check("no HDMI connected: fail", d.check_hdmi()["status"] == "fail")
-COMMANDS['echo "pow 0" | cec-client -s -d 1'] = "opening...\nERROR: could not open a connection\n"
-check("CEC without answer: fail", d.check_cec() == {"id": "cec", "status": "fail", "value": "no answer"})
-COMMANDS['echo "pow 0" | cec-client -s -d 1'] = "power status: on\n"
-del cfg.HDMI_PORT
-check("config.py without HDMI_PORT (older): fail, told",
-      d.check_cec() == {"id": "cec", "status": "fail", "value": "on (HDMI_PORT missing in config.py)"})
-cfg.HDMI_PORT = 3
-check("TV on: ok", d.check_cec() == {"id": "cec", "status": "ok", "value": "on (HDMI_PORT=3)"})
-commands_run.clear()
-check("CEC skipped during a call (cec-client not run)",
-      d.check_cec(skip=True)["value"] == "skipped" and not any("cec-client" in c for c in commands_run))
+CEC["power"] = None
+check("CEC without answer (monitor without CEC): fail, with the address",
+      d.check_cec() == {"id": "cec", "status": "fail", "value": "no answer (3.0.0.0)"})
+CEC["power"] = "to-on"
+check("TV turning on: warn", d.check_cec() == {"id": "cec", "status": "warn", "value": "to-on (3.0.0.0)"})
+CEC["power"] = "on"
+check("TV on: ok", d.check_cec() == {"id": "cec", "status": "ok", "value": "on (3.0.0.0)"})
+CEC["adapter"] = None
+check("no CEC adapter: fail", d.check_cec() == {"id": "cec", "status": "fail", "value": "no CEC adapter"})
+CEC["adapter"] = "/dev/cec0"
+asked = CEC["asked"]
+check("CEC skipped during a call (the TV is not asked)",
+      d.check_cec(skip=True)["value"] == "skipped" and CEC["asked"] == asked)
 COMMANDS["vcgencmd get_throttled"] = "throttled=0x0\n"
 check("power 0x0: ok", d.check_power() == {"id": "power", "status": "ok", "value": "0x0"})
 check("power since boot only: warn", (COMMANDS.__setitem__("vcgencmd get_throttled", "throttled=0x10000\n"), d.check_power()["status"])[1] == "warn")

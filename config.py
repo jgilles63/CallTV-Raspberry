@@ -52,9 +52,8 @@ MOUSE_DEVICE = None
 MOUSE_RETRY_DELAY = 5
 
 # --- HDMI input of the TV the Raspberry is plugged into (1, 2, 3, 4...) ---
-# The TV switches to this input when a call is accepted (HDMI-CEC).
-# Check: `echo "scan" | cec-client -s -d 1` shows the Raspberry with the
-# address "3.0.0.0" for input 3, "2.0.0.0" for input 2...
+# Used only if the TV does not give it: the input is normally read from the
+# TV itself (physical address "3.0.0.0" = input 3, see `cec-ctl -d /dev/cec0`).
 HDMI_PORT = 3
 
 # --- Sound card used for the ringtone and the voice announcement ---
@@ -75,6 +74,12 @@ AUDIO_DEVICE = None
 # without CEC). Chosen again at every call, after the TV is turned on.
 # "hdmi" or "usb" = always this output.
 CALL_AUDIO_OUTPUT = "auto"
+
+# --- Resolution of the screen (display_mode.py) ---
+# "1080p" = a TV giving 4K (3840 x 2160) is set to 1920 x 1080, up to 60 Hz:
+# much lighter for the Raspberry, smoother video calls. Screens of 1920
+# pixels or less are never changed. None = left as the TV wants it.
+SCREEN_MODE = "1080p"
 
 # --- Nightly restart of the Raspberry (self-repair, selfheal.py) ---
 # Hour (0 to 23, local time) at which the Raspberry restarts every night,

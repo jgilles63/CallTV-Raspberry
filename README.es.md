@@ -18,7 +18,7 @@ La Raspberry Pi está conectada al televisor de la persona que recibe la llamada
 ## Hardware
 
 - Raspberry Pi con entorno gráfico (X11, pantalla `:0`);
-- televisor compatible con **HDMI-CEC**, con la Raspberry conectada a una entrada HDMI (**HDMI 3** por defecto, ajuste `HDMI_PORT` de `config.py`);
+- televisor compatible con **HDMI-CEC**, con la Raspberry conectada a una entrada HDMI (la entrada se lee en el propio televisor; `HDMI_PORT` de `config.py` solo si el televisor no la da);
 - **webcam con micrófono** (usada por Chromium);
 - **ratón USB** que sirve de botón para «responder» (dentro de una carcasa impresa en 3D);
 - **altavoz USB** para el tono de llamada (detectado automáticamente: cualquier modelo, cualquier
@@ -42,8 +42,10 @@ HDMI-CEC: unknown»).
 | `i18n.py` | Traducciones (fr, en, es): anuncio de voz, mensajes del agente y de los scripts de instalación |
 | `identity.py` | Lee `identity.json` (identificador + secreto del dispositivo) |
 | `tts_audio.py` | Genera el anuncio de voz, lo mezcla con el tono y lo reproduce |
-| `tv_control.py` | Controla el televisor mediante HDMI-CEC (`cec-client`) |
+| `tv_control.py` | Controla el televisor mediante HDMI-CEC (`cec-ctl` del núcleo Linux): lo enciende, cambia su entrada, pregunta su estado; mantiene la Raspberry declarada al televisor como reproductor |
+| `remote_keys.py` | **Mando del televisor** por HDMI-CEC: el núcleo convierte sus teclas en un teclado (`vc4-hdmi-0`), leído por el agente: flechas, OK, Volver |
 | `call_audio.py` | Elige la salida del sonido de la llamada: el televisor (HDMI) o el altavoz USB |
+| `display_mode.py` | **Resolución de la pantalla**: un televisor 4K pasa a 1920 × 1080 (hasta 60 Hz), mucho más ligero para la Raspberry Pi 4 durante una videollamada; las pantallas de 1920 píxeles o menos nunca se cambian (`wlr-randr`) |
 | `start_tv_control.sh` | Inicia el agente en su entorno virtual de Python |
 | `ringtone.mp3` | Tono: «game-music1» de Nia Mi ([OpenGameArt](https://opengameart.org/node/153251)), dominio público (CC0); convertido a `.wav` y repetido durante toda la llamada |
 | `ColdStart/setup_identity.py` | **Ejecutar una vez**: crea la identidad del dispositivo y un código QR |
@@ -99,11 +101,14 @@ del agente están en inglés.
    - un **clic izquierdo** del ratón (leído con `evdev`, **detectado automáticamente**: cualquier
      modelo, cualquier puerto USB, se vuelve a encontrar después de desconectarlo);
    - la señal **`SIGUSR1`** (`kill -USR1 <pid>`, ver `HomeAssistant/`);
-   - el botón **Responder** de `receveur.html` (sincronizado por el servidor).
-4. **Encendido del televisor** (`tv_control.py`): `on 0` para encenderlo y después `as` (la
-   Raspberry pasa a ser la fuente activa, puerto 3) repetido 5 veces, porque algunos
-   televisores no responden al primer intento. Entre medias, `pow 0` pregunta el estado del
-   televisor: si un televisor responde y acepta sonido (ELD), el sonido de la llamada sale por el
+   - el botón **Responder** de `receveur.html` (sincronizado por el servidor);
+   - **OK en el mando del televisor**, cuando el televisor muestra la entrada de la Raspberry
+     (Volver rechaza; durante la llamada, Volver cuelga).
+4. **Encendido del televisor** (`tv_control.py`, `cec-ctl`): `--image-view-on` para encenderlo
+   y después `--active-source` (la Raspberry pasa a ser la fuente activa, dirección dada por el
+   televisor, p. ej. `3.0.0.0` para la entrada 3) repetido 5 veces, porque algunos televisores
+   no responden al primer intento. Entre medias, `--give-device-power-status` pregunta el
+   estado del televisor: si un televisor responde y acepta sonido (ELD), el sonido de la llamada sale por el
    televisor (`call_audio.py` vuelve a activar la salida HDMI si PipeWire la apagó porque el
    televisor estaba en espera al arrancar la Pi); si no, sale por el altavoz USB. El tono y el
    anuncio siempre siguen en el altavoz USB.
@@ -124,7 +129,7 @@ La cámara **no** la gestiona Python: la activa `receveur.html` en el momento de
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.2.5        # la última versión (ver «Releases»)
+   git checkout v0.2.6        # la última versión (ver «Releases»)
    ```
    (`sudo apt install -y git` si falta git.) Esta carpeta solo contiene el proyecto
    descargado: el script instala los programas en `~/AppelerMamie`.
@@ -138,7 +143,7 @@ La cámara **no** la gestiona Python: la activa `receveur.html` en el momento de
 
 El script lo hace todo, no hay nada más que instalar ni copiar:
 
-- instala los **paquetes del sistema** (ffmpeg, cec-utils, Chromium…) y el **entorno
+- instala los **paquetes del sistema** (ffmpeg, v4l-utils para `cec-ctl`, Chromium…) y el **entorno
   Python**;
 - **copia los programas** en `~/AppelerMamie` y convierte el tono;
 - configura el idioma, los permisos del usuario (ratón, TV, sonido), crea la **identidad** del
@@ -171,7 +176,7 @@ scripts encuentran esta carpeta automáticamente; solo hay que editar
 ### 1. Paquetes del sistema
 
 ```bash
-sudo apt install ffmpeg alsa-utils cec-utils chromium python3-venv
+sudo apt install ffmpeg alsa-utils v4l-utils cec-utils chromium python3-venv
 ```
 
 ### 2. Entorno de Python
@@ -247,8 +252,9 @@ solos, sin reiniciar. El servidor guarda entonces el secreto del dispositivo.
 | `MOUSE_DEVICE` | `None` (detección automática) | Solo hay que indicarlo para imponer un dispositivo concreto (varios ratones conectados): ruta estable de `ls -l /dev/input/by-id/` |
 | `AUDIO_DEVICE` | `None` (detección automática) | Altavoz del tono: el primer altavoz USB encontrado. Solo hay que indicarlo para imponer una tarjeta concreta (nombre entre corchetes en `aplay -l`) |
 | `CALL_AUDIO_OUTPUT` | `"auto"` | Salida del sonido de la llamada: el televisor (HDMI) si un televisor responde por HDMI-CEC y acepta sonido, si no el altavoz USB. `"hdmi"` o `"usb"` para imponerla |
+| `SCREEN_MODE` | `"1080p"` | Resolución de la pantalla: un televisor que da 4K pasa a 1920 × 1080, hasta 60 Hz (llamadas más fluidas). `None` deja la pantalla como la quiere el televisor |
 | `MOUSE_RETRY_DELAY` | `5` | Tiempo entre dos búsquedas del ratón cuando no está (segundos) |
-| `HDMI_PORT` | `3` | Entrada HDMI del televisor donde está conectada la Raspberry (el televisor cambia a ella al descolgar). Comprobación: `echo "scan" \| cec-client -s -d 1` muestra la Raspberry en la dirección `3.0.0.0` para la entrada 3 |
+| `HDMI_PORT` | `3` | Entrada HDMI del televisor, usada solo si el televisor no da la dirección de la Raspberry (normalmente se lee en el televisor: `cec-ctl -d /dev/cec0` muestra `Physical Address : 3.0.0.0` para la entrada 3) |
 | `RINGTONE_PATH` | `~/AppelerMamie/ringtone.wav` | Otro tono: copia su `.mp3` en `~/AppelerMamie`, vuelve a lanzar `install.sh` (crea el `.wav`) e indica aquí la ruta del `.wav`. `install.sh` lo conserva; si falta el archivo, suena el tono del proyecto |
 | `CALL_DURATION` | `30` | Tiempo de tono antes de abandonar (segundos) |
 | `MAX_CACHED_CALLS` | `30` | Número de archivos de audio guardados en caché |
@@ -342,7 +348,7 @@ GitHub también las lanza en cada envío (push).
 | «EL SERVIDOR RECHAZA EL SECRETO» | `identity.json` ha cambiado: pide al administrador que retire y vuelva a autorizar el identificador |
 | No suena el tono | Registros del agente: al arrancar, «Ringtone speaker: …» indica el altavoz encontrado; «No USB speaker found» significa que no se detecta ningún altavoz USB (el tono sale entonces por el televisor, que solo se oye si está encendido). Comprueba la conexión con `aplay -l` |
 | El clic no responde la llamada | Registros del agente: busca «Mouse found» o «No mouse found». Comprueba los permisos de `/dev/input/` (grupo `input`) y, si hay varios ratones conectados, impón el correcto con `MOUSE_DEVICE` |
-| El televisor no cambia de entrada | `echo "scan" \| cec-client -s -d 1` para comprobar el CEC |
+| El televisor no cambia de entrada, el mando no hace nada | `cec-ctl -d /dev/cec0` (dirección, «Playback» declarado) y `cec-ctl -d /dev/cec0 --to 0 --give-device-power-status`; comprobar que el CEC está activado en los ajustes del televisor (Anynet+, SimpLink, Bravia Sync…). No usar `cec-client`: al terminar, borra la configuración CEC (el agente vuelve a declarar la Raspberry en 30 s como máximo) |
 | No hay anuncio de voz | gTTS necesita Internet; como alternativa solo se reproduce el tono |
 | La pantalla del televisor no está en el idioma correcto | Comprueba `LANGUAGE` en `config.py` y reinicia el servicio Chromium |
 | Un script `.sh` falla con `\r` | Finales de línea de Windows: `sed -i 's/\r$//' script.sh` |

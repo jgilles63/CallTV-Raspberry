@@ -30,6 +30,10 @@ SERVER_HOST=$(cd "$APP_DIR" && python3 -c 'import config; print(config.SERVER_UR
 #     Recent Chromium versions go through the desktop camera portal (PipeWire),
 #     which a system service cannot reach: the camera never starts.
 #   --password-store=basic: no password keyring (nothing to unlock at start)
+# 4K TV: 1920 x 1080 first (display_mode.py, lighter for the Raspberry; the
+# agent checks it again every 30 s). Never blocks the start of Chromium.
+(cd "$APP_DIR" && timeout 15 python3 display_mode.py) || true
+
 DISPLAY=:0 chromium \
   --kiosk \
   --disable-features=WebRtcPipeWireCamera \

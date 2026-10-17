@@ -99,7 +99,7 @@ check "summary: verification code + full add command" 'grep -q "node admin.js ad
 check "setup_qr_code.txt contains the code" 'grep -q "$CODE1" $APP/setup_qr_code.txt'
 check "ringtone converted to .wav, used by default" '[ -f $APP/ringtone.wav ] && grep -q "^RINGTONE_PATH = str(BASE_DIR / \"ringtone.wav\")" $APP/config.py'
 check "every .mp3 of the folder converted (ringtone of one's own)" '! for m in $APP/*.mp3; do [ -f "${m%.mp3}.wav" ] || echo missing; done | grep -q missing'
-check "apt packages installed (cec-utils, ffmpeg...)" 'grep -q "apt-get install -y -q ffmpeg alsa-utils cec-utils python3-venv" $T/calls.log'
+check "apt packages installed (v4l-utils for cec-ctl, wlr-randr, ffmpeg...)" 'grep -q "apt-get install -y -q ffmpeg alsa-utils v4l-utils cec-utils wlr-randr python3-venv" $T/calls.log'
 check "chromium installed if missing, never upgraded (--no-upgrade)" 'grep -q "apt-get install -y -q --no-upgrade chromium" $T/calls.log && ! grep -q "install -y -q ffmpeg.*chromium" $T/calls.log'
 check "Python packages requested" 'grep -q "pip install -q websockets>=13,<18 evdev>=1.6,<3 gTTS>=2.5,<3 qrcode>=7,<9" $T/calls.log'
 check "groups input,video,audio (missing render ignored)" 'grep -q "usermod -aG input,video,audio ofic" $T/calls.log'

@@ -31,10 +31,12 @@ CLONE_DIR="${APPELERMAMIE_SRC_DIR:-$SRC_DIR}"
 PYTHON=python3
 export PYTHONDONTWRITEBYTECODE=1
 
-# System packages: audio conversion/playback, TV control (CEC), Python
-# virtual environment (+ build tools for evdev). The browser (chromium) is
-# installed apart: see the "packages" step.
-APT_PACKAGES=(ffmpeg alsa-utils cec-utils python3-venv python3-dev build-essential)
+# System packages: audio conversion/playback, TV control (CEC: cec-ctl of
+# v4l-utils; cec-utils only for manual checks with cec-client), resolution of
+# the screen (wlr-randr, display_mode.py), Python virtual environment (+ build
+# tools for evdev). The browser (chromium) is installed apart: see the
+# "packages" step.
+APT_PACKAGES=(ffmpeg alsa-utils v4l-utils cec-utils wlr-randr python3-venv python3-dev build-essential)
 
 # Python packages of the agent (versions tested on Raspberry Pi OS 13 "trixie")
 PIP_PACKAGES=("websockets>=13,<18" "evdev>=1.6,<3" "gTTS>=2.5,<3" "qrcode>=7,<9")
@@ -279,7 +281,7 @@ import sys
 
 new_path, old_path, lang, greeting_set, greeting = sys.argv[1:6]
 KEPT = ("SERVER_URL", "UNAUTHORIZED_RETRY_DELAY", "MOUSE_DEVICE", "MOUSE_RETRY_DELAY",
-        "HDMI_PORT", "AUDIO_DEVICE", "CALL_AUDIO_OUTPUT", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
+        "HDMI_PORT", "AUDIO_DEVICE", "CALL_AUDIO_OUTPUT", "SCREEN_MODE", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
         "MAX_CALLER_NAME_LENGTH", "VOICE_VOLUME", "RINGTONE_VOLUME", "NIGHTLY_REBOOT_HOUR",
         "GREETING_NAME")
 # Greeting of the announcement before GREETING_NAME existed

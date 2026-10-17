@@ -17,7 +17,7 @@ programs** that connect to the server with the same identity:
 ## Hardware
 
 - Raspberry Pi with a graphical environment (X11, display `:0`);
-- **HDMI-CEC** compatible TV, with the Raspberry plugged into an HDMI input (**HDMI 3** by default, `HDMI_PORT` setting of `config.py`);
+- **HDMI-CEC** compatible TV, with the Raspberry plugged into an HDMI input (the input is read from the TV itself; `HDMI_PORT` of `config.py` only if the TV does not give it);
 - **webcam with a microphone** (used by Chromium);
 - **USB mouse** used as the "answer" button (inside a 3D-printed case);
 - **USB speaker** for the ringtone (detected automatically: any model, any USB port); the
@@ -40,8 +40,10 @@ has to be turned on by hand (the health report shows "TV seen through HDMI-CEC: 
 | `i18n.py` | Translations (fr, en, es): voice announcement, messages of the agent and of the setup scripts |
 | `identity.py` | Reads `identity.json` (identifier + secret of the device) |
 | `tts_audio.py` | Generates the voice announcement, mixes it with the ringtone, plays it |
-| `tv_control.py` | Controls the TV through HDMI-CEC (`cec-client`) |
+| `tv_control.py` | Controls the TV through HDMI-CEC (`cec-ctl` of the Linux kernel): turns it on, switches its input, asks its state; keeps the Raspberry declared to the TV as a playback device |
+| `remote_keys.py` | **Remote control of the TV** through HDMI-CEC: the kernel turns its keys into a keyboard (`vc4-hdmi-0`), read by the agent: arrows, OK, Back |
 | `call_audio.py` | Chooses the output of the call sound: the TV (HDMI) or the USB speaker |
+| `display_mode.py` | **Screen resolution**: a 4K TV is set to 1920 x 1080 (up to 60 Hz), much lighter for the Raspberry Pi 4 during a video call; screens of 1920 pixels or less are never changed (`wlr-randr`) |
 | `start_tv_control.sh` | Starts the agent in its Python virtual environment |
 | `ringtone.mp3` | Ringtone: "game-music1" by Nia Mi ([OpenGameArt](https://opengameart.org/node/153251)), public domain (CC0); converted to `.wav` and repeated over the whole call |
 | `ColdStart/setup_identity.py` | **Run once**: creates the device identity and a QR code |
@@ -97,10 +99,13 @@ English.
    - a **left click** on the mouse (read with `evdev`, **detected automatically**: any model,
      any USB port, found again after being unplugged);
    - the **`SIGUSR1`** signal (`kill -USR1 <pid>`, see `HomeAssistant/`);
-   - the **Answer** button of `receveur.html` (synchronized by the server).
-4. **Turning the TV on** (`tv_control.py`): `on 0` to turn it on, then `as` (the Raspberry
-   becomes the active source, port 3) repeated 5 times, because some TVs do not answer the
-   first attempt. In between, `pow 0` asks the state of the TV: if a TV answers and accepts
+   - the **Answer** button of `receveur.html` (synchronized by the server);
+   - **OK on the remote control of the TV**, when the TV shows the input of the Raspberry
+     (Back declines; during the call, Back hangs up).
+4. **Turning the TV on** (`tv_control.py`, `cec-ctl`): `--image-view-on` to turn it on, then
+   `--active-source` (the Raspberry becomes the active source, address given by the TV, e.g.
+   `3.0.0.0` for input 3) repeated 5 times, because some TVs do not answer the first attempt.
+   In between, `--give-device-power-status` asks the state of the TV: if a TV answers and accepts
    sound (ELD), the call sound goes to the TV (`call_audio.py` turns the HDMI output back on if
    PipeWire turned it off because the TV was in standby when the Pi started); otherwise it goes
    to the USB speaker. The ringtone and the announcement always stay on the USB speaker.
@@ -121,7 +126,7 @@ The camera is **not** handled by Python: `receveur.html` starts it when the call
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.2.5        # the latest version (see "Releases")
+   git checkout v0.2.6        # the latest version (see "Releases")
    ```
    (`sudo apt install -y git` if git is missing.) This folder only holds the downloaded
    project: the script installs the programs into `~/AppelerMamie`.
@@ -135,7 +140,7 @@ The camera is **not** handled by Python: `receveur.html` starts it when the call
 
 The script does everything, nothing else to install or copy:
 
-- installs the **system packages** (ffmpeg, cec-utils, Chromium...) and the **Python
+- installs the **system packages** (ffmpeg, v4l-utils for `cec-ctl`, Chromium...) and the **Python
   environment**;
 - **copies the programs** into `~/AppelerMamie` and converts the ringtone;
 - sets the language, the user rights (mouse, TV, sound), creates the **identity** of the
@@ -166,7 +171,7 @@ automatically; only `chromium-autolaunch.service` must be edited (replace `YOUR_
 ### 1. System packages
 
 ```bash
-sudo apt install ffmpeg alsa-utils cec-utils chromium python3-venv
+sudo apt install ffmpeg alsa-utils v4l-utils cec-utils chromium python3-venv
 ```
 
 ### 2. Python environment
@@ -241,8 +246,9 @@ their own, without a restart. The server then pins the device secret.
 | `MOUSE_DEVICE` | `None` (automatic detection) | Only set it to force a specific device (several mice plugged in): stable path from `ls -l /dev/input/by-id/` |
 | `AUDIO_DEVICE` | `None` (automatic detection) | Ringtone speaker: the first USB speaker found. Only set it to force a specific card (name between brackets in `aplay -l`) |
 | `CALL_AUDIO_OUTPUT` | `"auto"` | Output of the call sound: the TV (HDMI) if a TV answers HDMI-CEC and accepts sound, otherwise the USB speaker. `"hdmi"` or `"usb"` to force it |
+| `SCREEN_MODE` | `"1080p"` | Screen resolution: a TV giving 4K is set to 1920 x 1080, up to 60 Hz (smoother video calls). `None` leaves the screen as the TV wants it |
 | `MOUSE_RETRY_DELAY` | `5` | Delay between two searches for the mouse when it is missing (seconds) |
-| `HDMI_PORT` | `3` | HDMI input of the TV the Raspberry is plugged into (the TV switches to it when a call is accepted). Check: `echo "scan" \| cec-client -s -d 1` shows the Raspberry at address `3.0.0.0` for input 3 |
+| `HDMI_PORT` | `3` | HDMI input of the TV, used only if the TV does not give the address of the Raspberry (normally read from the TV: `cec-ctl -d /dev/cec0` shows `Physical Address : 3.0.0.0` for input 3) |
 | `RINGTONE_PATH` | `~/AppelerMamie/ringtone.wav` | Another ringtone: copy its `.mp3` into `~/AppelerMamie`, run `install.sh` again (it makes the `.wav`), then give the path of the `.wav` here. Kept by `install.sh`; if the file is missing, the ringtone of the project is played |
 | `CALL_DURATION` | `30` | Ringing time before giving up (seconds) |
 | `MAX_CACHED_CALLS` | `30` | Number of audio files kept in cache |
@@ -336,7 +342,7 @@ GitHub also runs them on every push.
 | "THE SERVER REFUSES THE SECRET" | `identity.json` changed: ask the administrator to remove and authorize the identifier again |
 | No ringtone | Agent logs: at startup, "Ringtone speaker: …" shows the speaker found; "No USB speaker found" means no USB speaker is detected (the ringtone then goes through the TV, only heard if it is on). Check the connection with `aplay -l` |
 | The click does not answer | Agent logs: look for "Mouse found" or "No mouse found". Check the permissions on `/dev/input/` (`input` group) and, if several mice are plugged in, force the right one with `MOUSE_DEVICE` |
-| The TV does not switch | `echo "scan" \| cec-client -s -d 1` to check CEC |
+| The TV does not switch, the remote control does nothing | `cec-ctl -d /dev/cec0` (address, "Playback" declared) and `cec-ctl -d /dev/cec0 --to 0 --give-device-power-status`; check that CEC is on in the TV settings (Anynet+, SimpLink, Bravia Sync...). Do not use `cec-client`: when it ends, it clears the CEC configuration (the agent declares the Raspberry again within 30 s) |
 | No voice announcement | gTTS needs Internet; only the ringtone is played as a fallback |
 | The TV screen is in the wrong language | Check `LANGUAGE` in `config.py`, then restart the Chromium service |
 | A `.sh` script fails with `\r` | Windows line endings: `sed -i 's/\r$//' script.sh` |

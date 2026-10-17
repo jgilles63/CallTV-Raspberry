@@ -259,24 +259,34 @@ def check_hdmi():
     return check("hdmi", "ok" if connected else "fail", value)
 
 
+def check_screen():
+    """Resolution of the screen (wlr-randr): 1920 x 1080 expected on a 4K TV (display_mode.py)."""
+    import display_mode
+    modes = display_mode.current_mode()
+    if not modes:
+        return check("screen", "info", "-")
+    value = ", ".join(f"{name}: {w}x{h} {refresh:g} Hz" for name, (w, h, refresh) in modes)
+    too_big = any(w > display_mode.MAX_WIDTH for _, (w, _h, _r) in modes)
+    wanted = getattr(config, "SCREEN_MODE", "1080p") == "1080p"
+    return check("screen", "warn" if too_big and wanted else "ok", value)
+
+
 def check_cec(skip=False):
-    """Power status of the TV seen through HDMI-CEC ("on", "standby"...)."""
+    """
+    Power status of the TV seen through HDMI-CEC ("on", "standby"...) and the
+    physical address of the Raspberry (3.0.0.0 = input 3), with cec-ctl
+    (tv_control.py). Declares the Raspberry to the TV if needed (remote control).
+    """
     if skip:
         return check("cec", "info", "skipped")
-    output = run('echo "pow 0" | cec-client -s -d 1', shell=True)
-    if output is None:
-        return check("cec", "fail", "cec-client?")
-    match = re.search(r"power status:\s*(\S+)", output)
-    if not match:
-        return check("cec", "fail", "no answer")
-    power = match.group(1)
-    status = "ok" if power == "on" else ("warn" if power in ("standby", "in") else "fail")
-    # config.py older than HDMI_PORT (kept by install.sh): the TV cannot be
-    # switched to the input of the Raspberry
-    port = getattr(config, "HDMI_PORT", None)
-    if port is None:
-        return check("cec", "fail", f"{power} (HDMI_PORT missing in config.py)")
-    return check("cec", status, f"{power} (HDMI_PORT={port})")
+    import tv_control
+    adapter, address = tv_control.ensure_cec_ready()
+    if adapter is None:
+        return check("cec", "fail", "no CEC adapter")
+    power = tv_control.tv_power(adapter)
+    if power is None:
+        return check("cec", "fail", f"no answer ({address})")
+    return check("cec", "ok" if power == "on" else "warn", f"{power} ({address})")
 
 
 def check_camera():
@@ -416,8 +426,8 @@ def safe(function, *args):
 
 def run_checks(skip_cec=False):
     """
-    Runs all the checks (a few seconds, cec-client being the slowest).
-    skip_cec: True during a call, so that cec-client does not disturb the TV.
+    Runs all the checks (a few seconds).
+    skip_cec: True during a call, so that the TV is not disturbed.
     """
     checks = [safe(check_version), safe(check_update), safe(check_model), safe(check_os), safe(check_uptime),
               safe(check_watchdog)]
@@ -426,7 +436,7 @@ def run_checks(skip_cec=False):
     checks += [
         safe(check_selfheal), safe(check_chromium_version),
         safe(check_server), safe(check_interfaces), safe(check_wifi), safe(check_wifi_powersave),
-        safe(check_hdmi), safe(check_cec, skip_cec),
+        safe(check_hdmi), safe(check_screen), safe(check_cec, skip_cec),
         safe(check_camera), safe(check_microphone), safe(check_speaker), safe(check_call_audio), safe(check_mouse),
         safe(check_disk), safe(check_memory), safe(check_temperature), safe(check_power),
     ]

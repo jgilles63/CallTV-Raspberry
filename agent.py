@@ -7,6 +7,9 @@ Main agent:
 - receives the calls;
 - detects mouse clicks with evdev;
 - accepts a call when SIGUSR1 is received;
+- listens to the remote control of the TV (HDMI-CEC, remote_keys.py): OK
+  answers and Back declines while it rings, Back hangs up during a received
+  call, otherwise the keys go to the TV page (remote_key, its menu);
 - sends a periodic heartbeat;
 - sends its health report when the server asks for it (diagnostics.py);
 - tells systemd it is alive and writes its state for the self-repair
@@ -27,6 +30,9 @@ from evdev import InputDevice, ecodes, list_devices
 
 import config
 import diagnostics
+import display_mode
+import remote_keys
+import tv_control
 from device_code import device_code
 from i18n import t
 from tts_audio import AlertSound
@@ -314,7 +320,7 @@ class TVControlAgent:
         """Runs the checks (in a thread) and sends the report to the server."""
         request_id = data.get("requestId")
         print(f"🩺 Health report requested ({request_id})")
-        # During a call, cec-client is not run (it must not disturb the TV)
+        # During a call, the TV is not asked its state (it must not be disturbed)
         in_call = bool(self.call_window or self.current_call_id or self.outgoing_call_id)
         try:
             report = await asyncio.to_thread(diagnostics.run_checks, in_call)
@@ -594,6 +600,62 @@ class TVControlAgent:
             unused.close()
         return candidates[0] if candidates else None
 
+    # ---------------------------------------------------------
+    # Remote control of the TV (HDMI-CEC)
+    # ---------------------------------------------------------
+
+    async def on_remote_key(self, key):
+        """
+        Key of the remote control of the TV ("up", "down", "left", "right",
+        "ok", "back"). While it rings: OK answers (like the mouse), Back
+        declines. During a received call: Back hangs up. Otherwise the key goes
+        to the TV page (its menu), through the server.
+        """
+        if self.call_window and self.current_call_id:
+            if key == "ok":
+                print("📺 OK on the remote control while it rings: answering")
+                await self.on_mouse_click_async()
+            elif key == "back":
+                await self.decline_call()
+            return
+        if self.active_call_id and key == "back":
+            call_id = self.active_call_id
+            print(f"📺 Back on the remote control during the call {call_id}: hanging up")
+            self.active_call_id = None
+            await self.send_message({"type": "hangup", "callId": call_id})
+            return
+        await self.send_message({"type": "remote_key", "key": key})
+
+    async def decline_call(self):
+        """Back on the remote control while it rings: the call is declined."""
+        call_id = self.current_call_id
+        print(f"📺 Back on the remote control while it rings: call {call_id} declined")
+        self.cancel_call_timeout()
+        self.call_window = False
+        self.current_call_id = None
+        self.alert_sound.stop()
+        await self.send_message({"type": "hangup", "callId": call_id})
+        await asyncio.to_thread(tv_return)
+
+    @staticmethod
+    def keep_cec_ready():
+        """The Raspberry stays declared to the TV, so the TV keeps sending the keys."""
+        ensure = getattr(tv_control, "ensure_cec_ready", None)
+        if ensure is None:
+            return
+        try:
+            ensure()
+        except Exception as e:
+            print(f"⚠️ CEC not ready: {e}")
+
+    @staticmethod
+    def keep_screen_mode():
+        """A 4K TV stays in 1920 x 1080 (display_mode.py), even plugged back in."""
+        try:
+            display_mode.ensure_screen_mode()
+        except Exception as e:
+            print(f"⚠️ Screen mode not checked: {e}")
+
     async def mouse_listener(self):
         """
         Listens to mouse clicks and accepts the call during a call window.
@@ -700,6 +762,10 @@ class TVControlAgent:
         while True:
             self.notify_systemd("WATCHDOG=1")
             self.write_agent_state()
+            # Declared again if the configuration was lost (TV unplugged...)
+            await asyncio.to_thread(self.keep_cec_ready)
+            # 1920 x 1080 again if the TV gave its 4K mode back
+            await asyncio.to_thread(self.keep_screen_mode)
             await asyncio.sleep(self.alive_interval)
 
     # ---------------------------------------------------------
@@ -715,6 +781,8 @@ class TVControlAgent:
         # independently of the connection to the server.
         self.mouse_task = asyncio.create_task(self.mouse_listener())
         self.alive = asyncio.create_task(self.alive_task())
+        # Remote control of the TV: same, for the whole life of the agent
+        self.remote_task = asyncio.create_task(remote_keys.listen(self.on_remote_key))
 
         try:
             await self.connect()
