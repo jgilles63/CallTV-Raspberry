@@ -7,6 +7,7 @@
 # declines while it rings, Back hangs up a received call, otherwise the key
 # goes to the TV page (remote_key), the Raspberry stays declared to the TV.
 import asyncio
+import time
 import os
 import sys
 import tempfile
@@ -208,6 +209,41 @@ async def agent_behaviour():
     check("while it rings: Back declines (hangup, ringtone stopped, TV given back)",
           sent == [{"type": "hangup", "callId": "call-2"}] and not a.call_window and a.current_call_id is None
           and a.alert_sound.stopped > stops and tv_calls == ["return"], sent)
+
+    # While it rings, TV page connected: it chooses Answer / Decline (white outline)
+    sent.clear()
+    a.display_connected = True
+    a.call_window, a.current_call_id = True, "call-3"
+    await a.on_remote_key("right")
+    await a.on_remote_key("ok")
+    check("while it rings, page connected: arrows and OK go to the page (Answer / Decline chosen there)",
+          sent == [{"type": "remote_key", "key": "right"}, {"type": "remote_key", "key": "ok"}]
+          and a.call_window and a.active_call_id is None, sent)
+    sent.clear()
+    await a.on_remote_key("back")
+    check("... Back still declines at once", sent == [{"type": "hangup", "callId": "call-3"}] and not a.call_window)
+
+    # Click while it rings: waits a moment, the TV page may have declined (real mouse on "Decline")
+    agent.CLICK_DECLINE_GRACE = 0.05
+    sent.clear()
+    a.call_window, a.current_call_id = True, "call-4"
+    click = asyncio.create_task(a.on_mouse_click_after_page())
+    await asyncio.sleep(0.01)
+    await a.handle_message({"type": "hangup", "callId": "call-4"})
+    await click
+    check("click on Decline of the page: declined there, not answered", not any(m.get("type") == "accept_call" for m in sent), sent)
+    sent.clear()
+    a.call_window, a.current_call_id = True, "call-5"
+    await a.on_mouse_click_after_page()
+    check("click anywhere else (the button of grandma): answers", {"type": "accept_call", "callId": "call-5"} in sent, sent)
+    a.display_connected = None
+    a.active_call_id = None
+    sent.clear()
+    a.call_window, a.current_call_id = True, "call-6"
+    started = time.monotonic()
+    await a.on_mouse_click_after_page()
+    check("page not connected: the click answers at once", {"type": "accept_call", "callId": "call-6"} in sent
+          and time.monotonic() - started < 0.04)
 
     # The Raspberry stays declared to the TV
     tv_calls.clear()

@@ -42,6 +42,18 @@ case "$2" in input|video|audio) echo "$2:x:1:"; exit 0 ;; esac
 exit 2
 EOF
   printf '#!/bin/bash\ncp "${@: -2:1}" "${@: -1}"\n' > "$T/bin/ffmpeg"
+  cat > "$T/bin/curl" <<EOF
+#!/bin/bash
+echo "curl \$*" >> "$T/calls.log"
+out=""; url=""
+while [ \$# -gt 0 ]; do case "\$1" in -o) out="\$2"; shift 2 ;; --max-time) shift 2 ;; -*) shift ;; *) url="\$1"; shift ;; esac; done
+[ -f "$T/vosk/\$(basename "\$url")" ] || exit 22
+cp "$T/vosk/\$(basename "\$url")" "\$out"
+EOF
+  cat > "$T/bin/unzip" <<EOF
+#!/bin/bash
+exec "$REALPY" -m zipfile -e "\$2" "\$4"
+EOF
   printf '#!/bin/bash\nexit 0\n' > "$T/bin/labwc"
   cat > "$T/bin/python3" <<EOF
 #!/bin/bash
@@ -83,9 +95,11 @@ make_stubs
 
 echo "=== 1. First installation (--lang es, no restart)"
 fresh
-run 'abuela\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+run 'abuela\nClermont-Ferrand\n63000\nFrance\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 check "the script ends without error" '[ "$(cat $T/rc.txt)" = 0 ]'
 check "greeting of the announcement asked at the first installation" 'grep -q "Cómo llamar a la persona" $T/out.txt'
+check "place of the weather asked at the first installation (town, postal code, country)" 'grep -q "Ciudad (Intro = sin tiempo)" $T/out.txt && grep -q "Código postal" $T/out.txt && grep -q "País, por ejemplo" $T/out.txt'
+check "place of the weather saved in config.py and shown" 'grep -q "^WEATHER_CITY = \"Clermont-Ferrand\"$" $APP/config.py && grep -q "^WEATHER_POSTCODE = \"63000\"$" $APP/config.py && grep -q "^WEATHER_COUNTRY = \"France\"$" $APP/config.py && grep -q "Tiempo de la pantalla de inicio: Clermont-Ferrand 63000 France" $T/out.txt'
 check "greeting saved in config.py and the announcement shown" 'grep -q "^GREETING_NAME = \"abuela\"$" $APP/config.py && grep -q "«Oye abuela, es Paul quien te llama»" $T/out.txt'
 check "messages in Spanish" 'grep -q "INSTALACIÓN DE LLAMAR A LA ABUELA" $T/out.txt && grep -q "\[11/11\] Pantalla" $T/out.txt'
 check "files copied flat (agent, ColdStart, Chromium script)" '[ -f $APP/main.py ] && [ -f $APP/setup_identity.py ] && [ -x $APP/launch_chromium.sh ] && [ -f $APP/identity_manager.py ]'
@@ -99,7 +113,7 @@ check "summary: verification code + full add command" 'grep -q "node admin.js ad
 check "setup_qr_code.txt contains the code" 'grep -q "$CODE1" $APP/setup_qr_code.txt'
 check "ringtone converted to .wav, used by default" '[ -f $APP/ringtone.wav ] && grep -q "^RINGTONE_PATH = str(BASE_DIR / \"ringtone.wav\")" $APP/config.py'
 check "every .mp3 of the folder converted (ringtone of one's own)" '! for m in $APP/*.mp3; do [ -f "${m%.mp3}.wav" ] || echo missing; done | grep -q missing'
-check "apt packages installed (v4l-utils for cec-ctl, wlr-randr, ffmpeg...)" 'grep -q "apt-get install -y -q ffmpeg alsa-utils v4l-utils cec-utils wlr-randr python3-venv" $T/calls.log'
+check "apt packages installed (v4l-utils for cec-ctl, wlr-randr, unzip, ffmpeg...)" 'grep -q "apt-get install -y -q ffmpeg alsa-utils v4l-utils cec-utils wlr-randr unzip python3-venv" $T/calls.log'
 check "chromium installed if missing, never upgraded (--no-upgrade)" 'grep -q "apt-get install -y -q --no-upgrade chromium" $T/calls.log && ! grep -q "install -y -q ffmpeg.*chromium" $T/calls.log'
 check "Python packages requested" 'grep -q "pip install -q websockets>=13,<18 evdev>=1.6,<3 gTTS>=2.5,<3 qrcode>=7,<9" $T/calls.log'
 check "groups input,video,audio (missing render ignored)" 'grep -q "usermod -aG input,video,audio ofic" $T/calls.log'
@@ -128,7 +142,7 @@ check "folder copied (not a git clone): version unknown, told that remote update
 check "list of the packages installed kept" 'grep -q "ffmpeg.*chromium" $APP/.apt-packages'
 
 echo "=== 2. Update (run again, custom settings, restart accepted)"
-sed -i -e 's|^MOUSE_DEVICE = None|MOUSE_DEVICE = "/dev/input/event4"|' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' -e 's|^VOICE_VOLUME = 1.5|VOICE_VOLUME = 1.2|' -e 's|^SERVER_URL = "wss://appelermami.fr"|SERVER_URL = "wss://appelermami.fr:8443"|' -e 's|^HDMI_PORT = 3|HDMI_PORT = 2|' -e 's|^NIGHTLY_REBOOT_HOUR = 4|NIGHTLY_REBOOT_HOUR = None|' -e 's|^RINGTONE_PATH = .*|RINGTONE_PATH = str(BASE_DIR / "my-ringtone.wav")|' $APP/config.py
+sed -i -e 's|^MOUSE_DEVICE = None|MOUSE_DEVICE = "/dev/input/event4"|' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' -e 's|^VOICE_VOLUME = 1.5|VOICE_VOLUME = 1.2|' -e 's|^SERVER_URL = "wss://appelermami.fr"|SERVER_URL = "wss://appelermami.fr:8443"|' -e 's|^HDMI_PORT = 3|HDMI_PORT = 2|' -e 's|^NIGHTLY_REBOOT_HOUR = 4|NIGHTLY_REBOOT_HOUR = None|' -e 's|^RINGTONE_PATH = .*|RINGTONE_PATH = str(BASE_DIR / "my-ringtone.wav")|' -e 's|"frequency": 87.8,|"frequency": 88.2,|' -e '/"name": "FIP"/d' $APP/config.py
 cp "$APP/ringtone.mp3" "$APP/my-ringtone.mp3"
 printf 'x' >> $APP/main.py
 echo "# key of the first installation" > $T/root/etc/appelermamie/allowed_signers
@@ -138,6 +152,8 @@ check "the script ends without error" '[ "$(cat $T/rc.txt)" = 0 ]'
 check "without --lang: language of the Pi kept by default (es)" 'grep -q "INSTALACIÓN" $T/out.txt && grep -q "^LANGUAGE = \"es\"" $APP/config.py'
 check "same identity kept" 'grep -q "$ID1" $APP/identity.json && grep -q "Identidad existente conservada: $ID1" $T/out.txt'
 check "update: greeting kept, not asked again" 'grep -q "^GREETING_NAME = \"abuela\"$" $APP/config.py && ! grep -q "Cómo llamar a la persona" $T/out.txt'
+check "update: place of the weather kept, not asked again" 'grep -q "^WEATHER_CITY = \"Clermont-Ferrand\"$" $APP/config.py && grep -q "^WEATHER_COUNTRY = \"France\"$" $APP/config.py && ! grep -q "Ciudad (Intro" $T/out.txt'
+check "radio stations of one's own (several lines) kept, config.py still valid" 'grep -q "\"frequency\": 88.2," $APP/config.py && ! grep -q "\"name\": \"FIP\"" $APP/config.py && [ "$(grep -c "^RADIO_STATIONS = \[" $APP/config.py)" = 1 ] && "$REALPY" -c "import ast,sys; ast.parse(open(sys.argv[1], encoding=\"utf-8\").read())" "$(native $APP/config.py)"'
 check "custom HDMI_PORT (2) kept" 'grep -q "^HDMI_PORT = 2$" $APP/config.py'
 check "ringtone of one's own: RINGTONE_PATH kept, its .mp3 converted" 'grep -q "^RINGTONE_PATH = str(BASE_DIR / \"my-ringtone.wav\")" $APP/config.py && [ -f $APP/my-ringtone.wav ]'
 check "custom NIGHTLY_REBOOT_HOUR (None) kept" 'grep -q "^NIGHTLY_REBOOT_HOUR = None$" $APP/config.py'
@@ -167,7 +183,7 @@ check "refused with a message in 3 languages" '[ "$(cat $T/rc.txt)" != 0 ] && gr
 echo "=== 5. Files copied from Windows (CRLF line endings)"
 fresh
 sed -i 's/$/\r/' "$T/src/Raspberry_receiver/main.py" "$T/src/Raspberry_receiver/ColdStart/launch_chromium.sh"
-run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang en
+run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang en
 check "no greeting (Enter): GREETING_NAME = None, announcement without greeting" 'grep -q "^GREETING_NAME = None$" $APP/config.py && grep -q "\"It.s Paul calling\"" $T/out.txt'
 check "installed, line endings fixed" '[ "$(cat $T/rc.txt)" = 0 ] && ! grep -q $'"'"'\r'"'"' $APP/main.py $APP/launch_chromium.sh'
 check "messages in English" 'grep -q "INSTALLING CALL GRANDMA" $T/out.txt'
@@ -175,7 +191,7 @@ check "messages in English" 'grep -q "INSTALLING CALL GRANDMA" $T/out.txt'
 echo "=== 5b. System without NetworkManager nor /boot/firmware/config.txt"
 fresh
 rm -rf "$T/root/etc/NetworkManager" "$T/root/boot"
-run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang fr
+run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang fr
 check "installed without error, these settings simply skipped" '[ "$(cat $T/rc.txt)" = 0 ] && [ ! -e $T/root/etc/NetworkManager ] && [ ! -e $T/root/boot ] && grep -q "\[11/11\]" $T/out.txt'
 
 echo "=== 6. A step fails (apt error)"
@@ -193,7 +209,7 @@ check "installed without error in the same folder" '[ "$(cat $T/rc.txt)" = 0 ] &
 
 echo "=== 8. File owned by another user (not writable)"
 fresh
-run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 chmod 444 "$APP/launch_chromium.sh"
 : > $T/calls.log
 run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang es
@@ -201,18 +217,18 @@ check "rights repaired with sudo, then installation finished" '[ "$(cat $T/rc.tx
 
 echo "=== 9. Installation stopped while copying: config.py intact"
 fresh
-run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 rm -f "$APP/start_tv_control.sh"; mkdir "$APP/start_tv_control.sh"
 run '' "$T/src/Raspberry_receiver/install.sh"
 check "stops while copying the files" '[ "$(cat $T/rc.txt)" != 0 ] && grep -q "Fallo durante el paso «Archivos" $T/out.txt'
 check "config.py keeps the language (es), no temporary file left" 'grep -q "^LANGUAGE = \"es\"" $APP/config.py'
 rm -rf "$APP/start_tv_control.sh"
-run '\nn\n' "$T/src/Raspberry_receiver/install.sh"
+run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh"
 check "run again without --lang: takes es again and finishes" '[ "$(cat $T/rc.txt)" = 0 ] && grep -q "^LANGUAGE = \"es\"" $APP/config.py && [ ! -f $APP/.config.py.new ]'
 
 echo "=== 10. Old config.py without HDMI_PORT (previous version)"
 fresh
-run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 sed -i -e '/^HDMI_PORT = /d' -e '/^GREETING_NAME = /d' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' $APP/config.py
 run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 check "update: HDMI_PORT = 3 added, other settings kept" '[ "$(cat $T/rc.txt)" = 0 ] && [ "$(grep -c "^HDMI_PORT = 3$" $APP/config.py)" = 1 ] && grep -q "^AUDIO_DEVICE = \"AUDIO\"" $APP/config.py'
@@ -223,10 +239,14 @@ run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang fr --greeting 'papi "Jo"
 check "greeting changed, quotes and symbols removed, config.py still valid" '[ "$(cat $T/rc.txt)" = 0 ] && grep -q "^GREETING_NAME = \"papi Jo rm -rf\"$" $APP/config.py && "$REALPY" -c "import ast,sys; ast.parse(open(sys.argv[1], encoding=\"utf-8\").read())" "$(native $APP/config.py)"'
 run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang fr --greeting ""
 check "--greeting \"\": announcement without greeting" 'grep -q "^GREETING_NAME = None$" $APP/config.py && grep -q "« C.est Paul qui t.appelle »" $T/out.txt'
+run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang fr --city 'Saint-Étienne"; rm -rf ~' --postcode 42000 --country=FR
+check "--city / --postcode / --country: place changed, cleaned, config.py still valid" '[ "$(cat $T/rc.txt)" = 0 ] && grep -q "^WEATHER_CITY = \"Saint-Étienne rm -rf\"$" $APP/config.py && grep -q "^WEATHER_POSTCODE = \"42000\"$" $APP/config.py && grep -q "^WEATHER_COUNTRY = \"FR\"$" $APP/config.py && "$REALPY" -c "import ast,sys; ast.parse(open(sys.argv[1], encoding=\"utf-8\").read())" "$(native $APP/config.py)"'
+run 'n\n' "$T/src/Raspberry_receiver/install.sh" --lang fr --city ""
+check "--city \"\": no weather (postal code and country set to None too)" 'grep -q "^WEATHER_CITY = None$" $APP/config.py && grep -q "^WEATHER_POSTCODE = None$" $APP/config.py && grep -q "Pas de météo sur l.écran d.accueil" $T/out.txt'
 
 echo "=== 12. --update: no question, no restart of the Raspberry"
 fresh
-run '\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 : > $T/calls.log
 APPELERMAMIE_VERSION=v0.2.0 run '' "$T/src/Raspberry_receiver/install.sh" --update
 check "update ends without error, without any answer" '[ "$(cat $T/rc.txt)" = 0 ]'
@@ -250,6 +270,50 @@ check "the update service keeps the clone of the user (not the temporary copy)" 
 run '' "$T/src/Raspberry_receiver/install.sh" --update
 check "root without --user: still refused" '[ "$(cat $T/rc.txt)" != 0 ] && grep -q "No ejecutes este script con sudo" $T/out.txt'
 rm "$T/bin/id"
+
+echo "=== 14. Speech recognition model (spoken commands): checked before use"
+fresh
+mkdir -p "$T/vosk/vosk-model-small-es-0.42/am" "$T/vosk/vosk-model-small-es-0.42/conf"
+echo "fake" > "$T/vosk/vosk-model-small-es-0.42/conf/model.conf"
+(cd "$T/vosk" && "$REALPY" -c "import shutil; shutil.make_archive('vosk-model-small-es-0.42', 'zip', '.', 'vosk-model-small-es-0.42')")
+: > $T/calls.log
+run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+check "model of the language downloaded (Spanish)" 'grep -q "curl .*vosk-model-small-es-0.42.zip" $T/calls.log'
+check "file different from the known one (SHA-256): refused, no model, installation goes on" '[ "$(cat $T/rc.txt)" = 0 ] && [ ! -e $APP/vosk-model ] && grep -q "Modelo de reconocimiento de voz no instalado" $T/out.txt'
+FAKE_SHA="$(sha256sum "$T/vosk/vosk-model-small-es-0.42.zip" | cut -d" " -f1)"
+sed -i "s/09b239888f633ef2f0b4e09736e3d9936acfd810bc65d53fad45261762c6511f/$FAKE_SHA/" "$T/src/Raspberry_receiver/install.sh"
+: > $T/calls.log
+run '' "$T/src/Raspberry_receiver/install.sh" --update
+check "file with the expected SHA-256: model installed in ~/AppelerMamie/vosk-model" '[ -f $APP/vosk-model/conf/model.conf ] && grep -qx vosk-model-small-es-0.42 $APP/vosk-model/.name && grep -q "Modelo de reconocimiento de voz instalado: vosk-model-small-es-0.42" $T/out.txt'
+check "vosk in the Python packages" 'grep -q "pip install -q .*vosk>=0.3.45,<0.4" $T/calls.log'
+: > $T/calls.log
+run '' "$T/src/Raspberry_receiver/install.sh" --update
+check "update: model already there, not downloaded again" '! grep -q "^curl" $T/calls.log && [ -f $APP/vosk-model/conf/model.conf ]'
+rm -f "$T/vosk/vosk-model-small-es-0.42.zip"
+: > $T/calls.log
+run '' "$T/src/Raspberry_receiver/install.sh" --update --lang fr
+check "language changed: model of the new language asked (not available: the old one kept)" 'grep -q "curl .*vosk-model-small-fr-0.22.zip" $T/calls.log && [ "$(cat $T/rc.txt)" = 0 ] && [ -f $APP/vosk-model/conf/model.conf ]'
+check "config.py: VOICE_COMMANDS kept on update" 'grep -q "^VOICE_COMMANDS = True$" $APP/config.py'
+
+echo "=== 15. Settings changed on the TV (settings.json): written into config.py, file removed"
+printf '{
+  "LANGUAGE": "en",
+  "RINGTONE_VOLUME": 0.5,
+  "WEATHER_CITY": "Lyon",
+  "WEATHER_POSTCODE": "69001",
+  "WEATHER_COUNTRY": null
+}
+' > $APP/settings.json
+: > $T/calls.log
+run '' "$T/src/Raspberry_receiver/install.sh" --update
+check "language chosen on the TV kept by the update (en)" 'grep -q "^LANGUAGE = \"en\"" $APP/config.py'
+check "... and the messages of the script in that language" 'grep -q "CALL GRANDMA" $T/out.txt'
+check "ringtone volume and place of the TV written into config.py" 'grep -q "^RINGTONE_VOLUME = 0.5$" $APP/config.py && grep -q "^WEATHER_CITY = \"Lyon\"$" $APP/config.py && grep -q "^WEATHER_POSTCODE = \"69001\"$" $APP/config.py && grep -q "^WEATHER_COUNTRY = None$" $APP/config.py'
+check "settings.json removed (one place for the settings), config.py valid and applying a later one" '[ ! -e $APP/settings.json ] && grep -q "settings_store.apply(globals())" $APP/config.py && "$REALPY" -c "import ast,sys; ast.parse(open(sys.argv[1], encoding=\"utf-8\").read())" "$(native $APP/config.py)"'
+printf '{"WEATHER_CITY": "Nice"}' > $APP/settings.json
+: > $T/calls.log
+run '' "$T/src/Raspberry_receiver/install.sh" --update --city Grenoble
+check "an option of the script wins over the TV (--city)" 'grep -q "^WEATHER_CITY = \"Grenoble\"$" $APP/config.py && [ ! -e $APP/settings.json ]'
 
 echo
 echo "$pass passed, $fail failed"

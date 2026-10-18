@@ -14,6 +14,9 @@
 #   bash install.sh --lang es   # without the question
 #   bash install.sh --lang es --greeting abuela   # greeting of the announcement
 #                               # ("" = none), asked at the first installation
+#   bash install.sh --city "Clermont-Ferrand" --postcode 63000 --country France
+#                               # place of the weather of the TV home screen
+#                               # (each one may be ""), asked at the first installation
 #   bash install.sh --update    # update: no question, no restart of the Raspberry
 #
 # It can be run again at any time to update a Raspberry: the identity
@@ -34,12 +37,22 @@ export PYTHONDONTWRITEBYTECODE=1
 # System packages: audio conversion/playback, TV control (CEC: cec-ctl of
 # v4l-utils; cec-utils only for manual checks with cec-client), resolution of
 # the screen (wlr-randr, display_mode.py), Python virtual environment (+ build
-# tools for evdev). The browser (chromium) is installed apart: see the
-# "packages" step.
-APT_PACKAGES=(ffmpeg alsa-utils v4l-utils cec-utils wlr-randr python3-venv python3-dev build-essential)
+# tools for evdev), unzip (speech recognition model). The browser (chromium)
+# is installed apart: see the "packages" step.
+APT_PACKAGES=(ffmpeg alsa-utils v4l-utils cec-utils wlr-randr unzip python3-venv python3-dev build-essential)
 
 # Python packages of the agent (versions tested on Raspberry Pi OS 13 "trixie")
-PIP_PACKAGES=("websockets>=13,<18" "evdev>=1.6,<3" "gTTS>=2.5,<3" "qrcode>=7,<9")
+PIP_PACKAGES=("websockets>=13,<18" "evdev>=1.6,<3" "gTTS>=2.5,<3" "qrcode>=7,<9" "vosk>=0.3.45,<0.4")
+
+# Speech recognition model of each language (spoken commands to the robot,
+# voice_commands.py): small Vosk models, ~40 MB, checked against their
+# SHA-256 before use (a changed file is refused)
+VOSK_URL="${APPELERMAMIE_VOSK_URL:-https://alphacephei.com/vosk/models}"
+declare -A VOSK_MODELS=(
+  [fr]="vosk-model-small-fr-0.22 cabf6180e177eb9b3a9a9d43a437bd5e549f3a7d09525e5d69a3fed787be12ad"
+  [en]="vosk-model-small-en-us-0.15 30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498"
+  [es]="vosk-model-small-es-0.42 09b239888f633ef2f0b4e09736e3d9936acfd810bc65d53fad45261762c6511f"
+)
 
 TOTAL_STEPS=11
 STEP=0
@@ -47,6 +60,10 @@ STEP_NAME=""
 LANG_CHOICE=""
 GREETING_CHOICE=""
 GREETING_SET=""
+WEATHER_CITY=""
+WEATHER_POSTCODE=""
+WEATHER_COUNTRY=""
+WEATHER_SET=""
 UPDATE=""
 TARGET_USER=""
 
@@ -61,7 +78,13 @@ while [ $# -gt 0 ]; do
     --greeting=*) GREETING_CHOICE="${1#--greeting=}"; GREETING_SET=1; shift ;;
     --update) UPDATE=1; shift ;;
     --user) TARGET_USER="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
-    -h|--help) sed -n '5,23p' "$0"; exit 0 ;;
+    --city) WEATHER_CITY="${2-}"; WEATHER_SET=1; shift; [ $# -gt 0 ] && shift ;;
+    --city=*) WEATHER_CITY="${1#--city=}"; WEATHER_SET=1; shift ;;
+    --postcode) WEATHER_POSTCODE="${2-}"; WEATHER_SET=1; shift; [ $# -gt 0 ] && shift ;;
+    --postcode=*) WEATHER_POSTCODE="${1#--postcode=}"; WEATHER_SET=1; shift ;;
+    --country) WEATHER_COUNTRY="${2-}"; WEATHER_SET=1; shift; [ $# -gt 0 ] && shift ;;
+    --country=*) WEATHER_COUNTRY="${1#--country=}"; WEATHER_SET=1; shift ;;
+    -h|--help) sed -n '5,26p' "$0"; exit 0 ;;
     *) echo "❌ Unknown option: $1 (see --help)" >&2; exit 1 ;;
   esac
 done
@@ -145,6 +168,11 @@ if [ -z "$LANG_CHOICE" ]; then
   if [ -f "$APP_DIR/config.py" ]; then
     default_lang="$(sed -n 's/^LANGUAGE *= *"\([a-z][a-z]\)".*/\1/p' "$APP_DIR/config.py" | head -1)"
   fi
+  # Language chosen on the TV (settings page) first
+  if [ -f "$APP_DIR/settings.json" ]; then
+    tv_lang="$(sed -n 's/^ *"LANGUAGE": *"\([a-z][a-z]\)".*/\1/p' "$APP_DIR/settings.json" | head -1)"
+    default_lang="${tv_lang:-$default_lang}"
+  fi
   default_lang="${default_lang:-fr}"
   # Update: the language of the Raspberry, without question
   [ -n "$UPDATE" ] || read -r -p "Langue / Language / Idioma (fr, en, es) [$default_lang] : " LANG_CHOICE || true
@@ -174,6 +202,19 @@ if [ -z "$GREETING_SET" ] && [ -z "$UPDATE" ] && [ ! -f "$APP_DIR/config.py" ]; 
   read -r GREETING_CHOICE || true
   echo
   GREETING_SET=1
+fi
+
+# Place of the weather of the home screen (town, postal code, country): asked
+# at the first installation only (an update keeps the values of config.py)
+if [ -z "$WEATHER_SET" ] && [ -z "$UPDATE" ] && [ ! -f "$APP_DIR/config.py" ]; then
+  printf '%s' "$(msg install.askCity)"
+  read -r WEATHER_CITY || true
+  printf '%s' "$(msg install.askPostcode)"
+  read -r WEATHER_POSTCODE || true
+  printf '%s' "$(msg install.askCountry)"
+  read -r WEATHER_COUNTRY || true
+  echo
+  WEATHER_SET=1
 fi
 
 # Everything is also written to the log file
@@ -275,21 +316,30 @@ echo "${version:-unknown}" > "$APP_DIR/VERSION"
 # GREETING_NAME keeps the announcement it had ("Hey grandma, ...").
 new_config="$APP_DIR/.config.py.new"
 sed 's/\r$//' "$SRC_DIR/config.py" > "$new_config"
-config_notes="$("$PYTHON" - "$new_config" "$old_config" "$LANG_CHOICE" "$GREETING_SET" "$GREETING_CHOICE" <<'PY'
+config_notes="$("$PYTHON" - "$new_config" "$old_config" "$LANG_CHOICE" "$GREETING_SET" "$GREETING_CHOICE"   "$WEATHER_SET" "$WEATHER_CITY" "$WEATHER_POSTCODE" "$WEATHER_COUNTRY" <<'PY'
+import json
+import os
 import re
 import sys
 
 new_path, old_path, lang, greeting_set, greeting = sys.argv[1:6]
+weather_set, weather = sys.argv[6], dict(zip(("WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY"), sys.argv[7:10]))
 KEPT = ("SERVER_URL", "UNAUTHORIZED_RETRY_DELAY", "MOUSE_DEVICE", "MOUSE_RETRY_DELAY",
-        "HDMI_PORT", "AUDIO_DEVICE", "CALL_AUDIO_OUTPUT", "SCREEN_MODE", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
+        "HDMI_PORT", "AUDIO_DEVICE", "CALL_AUDIO_OUTPUT", "SCREEN_MODE", "VOICE_REACTION", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
         "MAX_CALLER_NAME_LENGTH", "VOICE_VOLUME", "RINGTONE_VOLUME", "NIGHTLY_REBOOT_HOUR",
-        "GREETING_NAME")
+        "GREETING_NAME", "WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY", "VOICE_COMMANDS",
+        "RADIO_STATIONS")
+# Settings written on several lines (a list from "[" to the "]" at the start of a line)
+BLOCKS = ("RADIO_STATIONS",)
 # Greeting of the announcement before GREETING_NAME existed
 FORMER_GREETING = {"fr": "mamie", "en": "grandma", "es": "abuela"}
 
 
 def setting(key, text):
-    match = re.search(rf"^{key} *=.*$", text, re.M)
+    if key in BLOCKS:
+        match = re.search(rf"^{key} *= *\[.*?^\]$", text, re.M | re.S)
+    else:
+        match = re.search(rf"^{key} *=.*$", text, re.M)
     return match.group(0) if match else None
 
 
@@ -323,6 +373,39 @@ elif old_path and not setting("GREETING_NAME", old):
     set_greeting(FORMER_GREETING[lang])
     print("greeting=kept")
 
+
+def set_weather():
+    global new
+    for key, value in weather.items():
+        clean = "".join(c for c in value.strip()[:60] if c.isalnum() or c in " -'.,").strip()
+        line = f'{key} = "{clean}"' if clean else f"{key} = None"
+        new = re.sub(rf"^{key} *=.*$", line, new, count=1, flags=re.M)
+    print("weather=set")
+
+
+if weather_set:
+    set_weather()
+
+# Settings changed on the TV (settings.json): written here, the file is then
+# removed (one place for the settings). The options of this script win.
+settings_path = os.path.join(os.path.dirname(new_path), "settings.json")
+try:
+    with open(settings_path, encoding="utf-8") as f:
+        tv_settings = json.load(f)
+except (OSError, ValueError):
+    tv_settings = None
+if isinstance(tv_settings, dict):
+    volume = tv_settings.get("RINGTONE_VOLUME")
+    if isinstance(volume, (int, float)) and not isinstance(volume, bool) and 0.1 <= volume <= 1.0:
+        new = re.sub(r"^RINGTONE_VOLUME *=.*$", f"RINGTONE_VOLUME = {round(volume, 2)}", new, count=1, flags=re.M)
+    volume = tv_settings.get("VOICE_VOLUME")
+    if isinstance(volume, (int, float)) and not isinstance(volume, bool) and 0.15 <= volume <= 1.96:
+        new = re.sub(r"^VOICE_VOLUME *=.*$", f"VOICE_VOLUME = {round(volume, 2)}", new, count=1, flags=re.M)
+    if not weather_set and any(key in tv_settings for key in weather):
+        weather = {key: tv_settings.get(key) or "" for key in weather}
+        set_weather()
+    print("settings=absorbed")
+
 new = re.sub(r"^LANGUAGE *=.*$", f'LANGUAGE = "{lang}"', new, count=1, flags=re.M)
 
 with open(new_path, "w", encoding="utf-8", newline="\n") as f:
@@ -330,6 +413,9 @@ with open(new_path, "w", encoding="utf-8", newline="\n") as f:
 PY
 )"
 mv "$new_config" "$APP_DIR/config.py"
+if grep -q "^settings=absorbed" <<< "$config_notes"; then
+  rm -f "$APP_DIR/settings.json"
+fi
 if [ -n "$old_config" ]; then
   msg install.configKept backup="$old_config"
 fi
@@ -351,6 +437,14 @@ if [ -n "$greeting_note" ]; then
     msg install.greeting phrase="$phrase"
   fi
 fi
+if grep -q "^weather=set$" <<< "$config_notes"; then
+  place="$(sed -n 's/^WEATHER_\(CITY\|POSTCODE\|COUNTRY\) *= *"\(.*\)".*/\2/p' "$APP_DIR/config.py" | paste -sd ' ' -)"
+  if grep -q '^WEATHER_\(CITY\|POSTCODE\) *= *"' "$APP_DIR/config.py"; then
+    msg install.weather place="$place"
+  else
+    msg install.noWeather
+  fi
+fi
 
 # ---------------------------------------------------------
 # 4. Python environment
@@ -360,6 +454,22 @@ if [ ! -x "$APP_DIR/venv/bin/python3" ]; then
   "$PYTHON" -m venv "$APP_DIR/venv"
 fi
 "$APP_DIR/venv/bin/pip" install -q "${PIP_PACKAGES[@]}"
+
+# Speech recognition model of the language (once; again if the language
+# changed). Never fatal: without it, there are no spoken commands.
+read -r vosk_name vosk_sha <<< "${VOSK_MODELS[$LANG_CHOICE]}"
+if [ "$(cat "$APP_DIR/vosk-model/.name" 2>/dev/null)" != "$vosk_name" ]; then
+  vosk_tmp="$(mktemp -d)"
+  if curl -sSfL --max-time 900 -o "$vosk_tmp/model.zip" "$VOSK_URL/$vosk_name.zip"      && echo "$vosk_sha  $vosk_tmp/model.zip" | sha256sum -c --quiet -      && unzip -q "$vosk_tmp/model.zip" -d "$vosk_tmp" && [ -d "$vosk_tmp/$vosk_name" ]; then
+    rm -rf "$APP_DIR/vosk-model"
+    mv "$vosk_tmp/$vosk_name" "$APP_DIR/vosk-model"
+    echo "$vosk_name" > "$APP_DIR/vosk-model/.name"
+    msg install.voiceModel name="$vosk_name"
+  else
+    msg install.voiceModelFailed
+  fi
+  rm -rf "$vosk_tmp"
+fi
 
 # ---------------------------------------------------------
 # 5. Ringtone: aplay plays WAV files

@@ -271,6 +271,33 @@ def check_screen():
     return check("screen", "warn" if too_big and wanted else "ok", value)
 
 
+def check_weather():
+    """Place of the weather of the home screen (config.py), set or not."""
+    parts = [str(getattr(config, name, None) or "").strip()
+             for name in ("WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY")]
+    if not parts[0] and not parts[1]:
+        return check("weather", "info", "-")
+    return check("weather", "ok", " ".join(p for p in parts if p))
+
+
+def check_voice():
+    """Spoken commands: speech recognition model and Vosk installed (voice_commands.py)."""
+    if getattr(config, "VOICE_COMMANDS", True) is False:
+        return check("voice", "info", "off")
+    path = config.BASE_DIR / "vosk-model"
+    if not path.is_dir():
+        return check("voice", "warn", "no model")
+    try:
+        name = (path / ".name").read_text(encoding="utf-8").strip()[:60]
+    except OSError:
+        name = path.name
+    try:
+        import vosk  # noqa: F401
+    except ImportError:
+        return check("voice", "warn", f"{name}, vosk missing")
+    return check("voice", "ok", name)
+
+
 def check_cec(skip=False):
     """
     Power status of the TV seen through HDMI-CEC ("on", "standby"...) and the
@@ -437,6 +464,7 @@ def run_checks(skip_cec=False):
         safe(check_selfheal), safe(check_chromium_version),
         safe(check_server), safe(check_interfaces), safe(check_wifi), safe(check_wifi_powersave),
         safe(check_hdmi), safe(check_screen), safe(check_cec, skip_cec),
+        safe(check_weather), safe(check_voice),
         safe(check_camera), safe(check_microphone), safe(check_speaker), safe(check_call_audio), safe(check_mouse),
         safe(check_disk), safe(check_memory), safe(check_temperature), safe(check_power),
     ]

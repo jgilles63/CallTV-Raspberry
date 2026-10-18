@@ -16,10 +16,17 @@ Text-to-speech (TTS) and playback of the call sound.
     (terminate) through the AlertSound class.
   - Finds the sound card for the ringtone at every call (USB speaker
     detected automatically, see config.AUDIO_DEVICE).
+  - Says the answers of the robot to the spoken commands (say: one sentence
+    of i18n.py, cached, on the same speaker).
+  - Volume of the speaker set by voice ("Robot, volume 5": 1 to 10, saved in
+    speaker_volume.txt): the robot and the radio use it; the ringtone is
+    always at 100 % (it must be heard).
 """
 
 import glob
+import hashlib
 import os
+import wave
 import re
 import subprocess
 
@@ -47,6 +54,13 @@ CARD_LINE = re.compile(r"^\s*(\d+)\s+\[(\S+)\s*\]:\s+(\S+)\s+-\s+(.*)$")
 
 # Volume controls tried in this order (their name depends on the card model)
 VOLUME_CONTROLS = ("PCM", "Speaker", "Master", "Headphone")
+# Volume of the robot and the radio: level 1 to 10 (= 10 % to 100 %), kept in
+# this file of the application folder
+VOLUME_FILE_NAME = "speaker_volume.txt"
+VOLUME_LEVELS = range(1, 11)
+# Voice of the robot in its WAV files (its loudness then follows the volume
+# said by voice); VOICE_VOLUME is the voice of the announcement of a call
+ROBOT_VOICE_VOLUME = 1.5
 
 
 def list_sound_cards():
@@ -104,21 +118,60 @@ def playback_device(card):
     return f"plughw:CARD={card['id']},DEV=0" if card else "default"
 
 
-def set_max_volume(card):
+def set_card_volume(card, percent, mapped=False):
     """
-    Sets the volume of the card to 100 %, trying the usual control names.
-    Does nothing for the default output (its volume is the system's).
+    Sets the volume of the card (percent), trying the usual control names;
+    mapped: on the scale of the ear (amixer -M), for the levels said by
+    voice. Does nothing for the default output (its volume is the system's).
     """
     if card is None:
         return
     for control in VOLUME_CONTROLS:
         result = subprocess.run(
-            ["amixer", "-c", card["id"], "sset", control, "100%"],
+            ["amixer"] + (["-M"] if mapped else []) + ["-c", card["id"], "sset", control, f"{int(percent)}%"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         if result.returncode == 0:
             return
     print(f"⚠️ Could not set the volume of '{card['id']}' (no {'/'.join(VOLUME_CONTROLS)} control)")
+
+
+def set_max_volume(card):
+    """Sets the volume of the card to 100 % (the ringtone)."""
+    set_card_volume(card, 100)
+
+
+def volume_file():
+    return config.BASE_DIR / VOLUME_FILE_NAME
+
+
+def volume_level():
+    """Volume of the robot and the radio, 1 to 10 (10 if never set)."""
+    try:
+        level = int(volume_file().read_text(encoding="utf-8").strip())
+    except (OSError, ValueError, AttributeError):
+        return 10
+    return level if level in VOLUME_LEVELS else 10
+
+
+def save_volume_level(level):
+    """Keeps the volume said by voice (1 to 10); False if not valid or not saved."""
+    if level not in VOLUME_LEVELS:
+        return False
+    try:
+        volume_file().write_text(f"{level}\n", encoding="utf-8")
+    except OSError as e:
+        print(f"⚠️ Volume not saved ({e})")
+        return False
+    return True
+
+
+def set_speaker_volume(level=None):
+    """
+    Volume of the speaker for the robot and the radio: the level said by
+    voice, or level (1 to 10: the radio turned down while the robot listens).
+    """
+    set_card_volume(find_ringing_card(), (level or volume_level()) * 10, mapped=True)
 
 
 def clean_greeting():
@@ -231,9 +284,12 @@ def generate_call_wav(caller_name):
     file_key = safe_filename_from_name(caller_name)
     greeting_key = clean_greeting().lower().replace(" ", "").replace("-", "").replace("'", "") or "none"
 
-    # The language and the greeting are part of the file name: changing
-    # LANGUAGE or GREETING_NAME must not replay an older announcement.
-    final_wav = config.CACHE_DIR / f"call_{lang}_{greeting_key}_{file_key}.wav"
+    # The language, the greeting and the volumes of the music and the voice
+    # are part of the file name: changing LANGUAGE, GREETING_NAME,
+    # RINGTONE_VOLUME or VOICE_VOLUME (settings page) must not replay an older
+    # announcement.
+    ringtone_key = f"r{round(float(config.RINGTONE_VOLUME) * 100)}v{round(float(config.VOICE_VOLUME) * 100)}"
+    final_wav = config.CACHE_DIR / f"call_{lang}_{greeting_key}_{ringtone_key}_{file_key}.wav"
 
     # --- Cache: already generated for this name, reuse it directly ---
     if final_wav.exists():
@@ -292,6 +348,87 @@ def generate_call_wav(caller_name):
         for f in (voice_mp3, voice_wav):
             if f.exists():
                 f.unlink()
+
+
+def make_speech_wav(text, wav):
+    """Generates the spoken text into the WAV file wav (gTTS + ffmpeg); True if done."""
+    if not gTTS:
+        return False
+    mp3 = wav.with_suffix(".mp3")
+    try:
+        gTTS(text=text, lang=language()).save(str(mp3))
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(mp3), "-af", f"dynaudnorm,volume={ROBOT_VOICE_VOLUME}", str(wav)],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        return True
+    except Exception as e:
+        print(f"❌ Sentence of the robot not generated ({e})")
+        return False
+    finally:
+        if mp3.exists():
+            mp3.unlink()
+
+
+def spoken_wav(key):
+    """
+    WAV file of a fixed sentence of the robot (i18n key, e.g. "voice.hello")
+    in the language of the Raspberry, generated once then cached; None on
+    failure.
+    """
+    lang = language()
+    text = t(key)
+    # The text is part of the name: a changed sentence is generated again
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:10]
+    wav = config.CACHE_DIR / f"say_{lang}_{re.sub(r'[^a-z0-9]+', '_', key.lower())}_{digest}.wav"
+    if wav.exists():
+        return str(wav)
+    return str(wav) if make_speech_wav(text, wav) else None
+
+
+def text_wav(text):
+    """
+    WAV file of a sentence that changes every time (the time, the weather):
+    not cached, the same file is used again at each answer. None on failure.
+    """
+    wav = config.CACHE_DIR / "say_now.wav"
+    return str(wav) if make_speech_wav(text, wav) else None
+
+
+def wav_seconds(path):
+    """Length of a WAV file in seconds (0 if unknown)."""
+    try:
+        with wave.open(str(path), "rb") as f:
+            return f.getnframes() / float(f.getframerate() or 1)
+    except (OSError, EOFError, wave.Error):
+        return 0
+
+
+def play_wav(wav):
+    """
+    Plays a sentence of the robot on the speaker of the ringtone and returns
+    when it is over. False if it could not be played.
+    """
+    if not wav:
+        return False
+    card = find_ringing_card()
+    set_card_volume(card, volume_level() * 10, mapped=True)
+    try:
+        result = subprocess.run(["aplay", "-q", "-D", playback_device(card), wav],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"⚠️ Sentence of the robot not played ({e})")
+        return False
+    return result.returncode == 0
+
+
+def say(key):
+    """
+    Says a fixed sentence of the robot (i18n key) and returns when it is
+    over. False if it could not be said (no internet the first time, no
+    speaker...).
+    """
+    return play_wav(spoken_wav(key))
 
 
 class AlertSound:

@@ -257,10 +257,20 @@ cfg.GREETING_NAME = "papa"
 second = tts_audio.generate_call_wav("Paul")
 check("other greeting: another cached file, new sentence spoken",
       first != second and spoken == ["Hé mamie, c'est Paul qui t'appelle", "Hé papa, c'est Paul qui t'appelle"], (first, second, spoken))
-check("cache names: language, greeting, caller",
-      first.endswith("call_fr_mamie_paul.wav") and second.endswith("call_fr_papa_paul.wav"))
+ring = f"r{round(float(cfg.RINGTONE_VOLUME) * 100)}v{round(float(cfg.VOICE_VOLUME) * 100)}"
+check("cache names: language, greeting, ringtone volume, caller",
+      first.endswith(f"call_fr_mamie_{ring}_paul.wav") and second.endswith(f"call_fr_papa_{ring}_paul.wav"), first)
 cfg.GREETING_NAME = None
-check("without greeting: its own cached file", tts_audio.generate_call_wav("Paul").endswith("call_fr_none_paul.wav"))
+check("without greeting: its own cached file", tts_audio.generate_call_wav("Paul").endswith(f"call_fr_none_{ring}_paul.wav"))
+saved_volume = cfg.RINGTONE_VOLUME
+cfg.RINGTONE_VOLUME = 0.7
+check("ringtone music changed on the TV: another cached file (made again)",
+      tts_audio.generate_call_wav("Paul").endswith(f"call_fr_none_r70v{round(float(cfg.VOICE_VOLUME) * 100)}_paul.wav"))
+saved_voice = cfg.VOICE_VOLUME
+cfg.VOICE_VOLUME = 1.95
+check("ringtone voice changed on the TV: another cached file", tts_audio.generate_call_wav("Paul").endswith("call_fr_none_r70v195_paul.wav"))
+cfg.VOICE_VOLUME = saved_voice
+cfg.RINGTONE_VOLUME = saved_volume
 tts_audio.gTTS = None
 
 print(f"\n{sum(results)} passed, {len(results) - sum(results)} failed")

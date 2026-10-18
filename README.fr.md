@@ -46,6 +46,12 @@ HDMI-CEC : unknown »).
 | `remote_keys.py` | **Télécommande de la TV** par HDMI-CEC : le noyau transforme ses touches en clavier (`vc4-hdmi-0`), lu par l'agent : flèches, OK, Retour |
 | `call_audio.py` | Choisit la sortie du son de l'appel : la TV (HDMI) ou l'enceinte USB |
 | `display_mode.py` | **Résolution de l'écran** : une TV 4K est passée en 1920 × 1080 (jusqu'à 60 Hz), bien plus léger pour le Raspberry Pi 4 pendant un appel vidéo ; les écrans de 1920 pixels ou moins ne sont jamais changés (`wlr-randr`) |
+| `sound_level.py` | **Robot qui réagit aux sons** : hors appel, mesure seulement le **volume** du micro de la caméra (`pw-record`, partagé avec Chromium ; rien n'est enregistré ni envoyé) et prévient la page TV quand quelqu'un parle (`sound_activity`) : son robot traverse l'écran d'un côté à l'autre |
+| `voice_commands.py` | **Commandes vocales au robot** : « Robot bonjour » (ou « Bonjour robot ») fait faire coucou au robot de la page TV, qui répond « Bonjour, je suis Robot » sur l'enceinte ; « Robot, quelle heure est-il ? » et « Robot, quel temps fait-il ? » : lunettes et index levé sur la TV, l'heure ou la météo du jour dite à voix haute. « Robot » seul : les yeux et la bouche du robot passent au vert quelques secondes, la question seule suffit alors. Aussi la radio, le volume et l'appel d'un contact TV (`radio.py`) ; pendant la sonnerie, « Robot, décroche » / « Robot, raccroche » (la sonnerie baisse pendant que le robot écoute). Reconnu sur le Raspberry lui-même (Vosk, petit modèle de la langue dans `~/AppelerMamie/vosk-model`, liste de mots fermée), seulement quand un son est entendu ; modèle déchargé pendant les appels |
+| `robot_answers.py` | Phrases du robot : l'heure (« Il est 14 heures et 35 minutes »), la météo (température actuelle et prévision du jour, demandées au serveur) et sa santé (« Robot, comment ça va ? » : le rapport de `diagnostics.py`, ce qui est en panne ou à surveiller, température, mémoire et disque libres, durée d'allumage), dans la langue du Raspberry |
+| `radio.py` | **Radio demandée à la voix** : « Robot, mets la radio » (dernière station), « Robot, radio 101.2 » (station de cette fréquence), « Robot, mets Nostalgie » (son nom), « Robot … stop » ou le bouton Stop de la page TV ; allumée au volume 2, baissée à 1 pendant que le robot écoute ; stations de `config.py` (`RADIO_STATIONS`), flux lu par ffmpeg et joué sur l'enceinte USB ; baissée pendant que le robot écoute, en pause pendant qu'il parle, coupée par un appel ou le bouton. Aussi « Robot, volume 1 à 10 » (robot et radio ; la sonnerie reste à 100 %) et « Robot, appelle <contact TV> » (l'appel part de cette TV) |
+| `settings_store.py` / `voice_model.py` | **Réglages changés sur la TV** (engrenage de l'écran d'accueil) : `settings.json`, une liste fermée (langue, volume de la sonnerie, lieu de la météo), chaque valeur vérifiée, appliquée à la fin de `config.py` ; `install.sh` les réécrit dans `config.py` et supprime le fichier. Une nouvelle langue reçoit son modèle de voix (même SHA-256 que `install.sh`) |
+| `calendar_store.py` | **Calendrier de la TV** (clic ou OK sur l'heure de l'écran d'accueil) : notes des jours (texte libre, éventuellement chaque année) gardées sur le Raspberry seulement, dans `calendar.json` (chaque note vérifiée : vraie date, texte nettoyé et coupé à 80, 300 notes au plus) ; le serveur ne fait que les relayer à la page TV |
 | `start_tv_control.sh` | Lance l'agent dans son environnement virtuel Python |
 | `ringtone.mp3` | Sonnerie : « game-music1 » de Nia Mi ([OpenGameArt](https://opengameart.org/node/153251)), domaine public (CC0) ; convertie en `.wav` et répétée pendant tout l'appel |
 | `ColdStart/setup_identity.py` | **À lancer une fois** : crée l'identité de l'appareil et un QR code |
@@ -129,7 +135,7 @@ décroché.
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.2.6        # la dernière version (voir « Releases »)
+   git checkout v0.2.7        # la dernière version (voir « Releases »)
    ```
    (`sudo apt install -y git` si git manque.) Ce dossier contient seulement le projet
    téléchargé : le script installe les programmes dans `~/AppelerMamie`.
@@ -248,11 +254,15 @@ sans redémarrage. Le serveur retient alors le secret de l'appareil.
 |---|---|---|
 | `LANGUAGE` | `fr` | Langue du Raspberry (`fr`, `en`, `es`) |
 | `GREETING_NAME` | demandé par `install.sh` | Comment l'annonce appelle la personne (« mamie », « papa », un prénom…) ; `None` = sans salutation |
+| `WEATHER_CITY`, `WEATHER_POSTCODE`, `WEATHER_COUNTRY` | demandés par `install.sh` | Lieu de la météo de l'écran d'accueil de la TV : ville, code postal, pays (« France » ou « FR »), chacun peut valoir `None`. Sans ville ni code postal : pas de météo. Demandés à la première installation (options `--city`, `--postcode`, `--country`), gardés par les mises à jour ; seul le lieu est envoyé au service météo (Open-Meteo, par le serveur). Redémarrer l'agent après un changement |
 | `SERVER_URL` | `wss://appelermami.fr` | Adresse de votre serveur |
 | `MOUSE_DEVICE` | `None` (détection automatique) | À renseigner seulement pour imposer un appareil précis (plusieurs souris branchées) : chemin stable de `ls -l /dev/input/by-id/` |
 | `AUDIO_DEVICE` | `None` (détection automatique) | Enceinte de la sonnerie : la première enceinte USB trouvée. À renseigner seulement pour imposer une carte précise (nom entre crochets dans `aplay -l`) |
 | `CALL_AUDIO_OUTPUT` | `"auto"` | Sortie du son de l'appel : la TV (HDMI) si une TV répond en HDMI-CEC et accepte le son, sinon l'enceinte USB. `"hdmi"` ou `"usb"` pour l'imposer |
 | `SCREEN_MODE` | `"1080p"` | Résolution de l'écran : une TV qui donne la 4K passe en 1920 × 1080, jusqu'à 60 Hz (appels plus fluides). `None` laisse l'écran comme la TV le veut |
+| `VOICE_REACTION` | `True` | Hors appel, le volume du micro est mesuré pour que le robot de la page TV bouge quand quelqu'un parle (rien n'est enregistré ni envoyé). `False` = micro jamais utilisé hors appel |
+| `VOICE_COMMANDS` | `True` | Commandes vocales au robot (« Robot bonjour », heure, météo, radio, volume, appel), reconnues sur le Raspberry (rien n'est envoyé), jamais pendant un appel ; nécessite `VOICE_REACTION`. `False` = aucune |
+| `RADIO_STATIONS` | 12 stations (fréquences de Paris) | Radio demandée à la voix : nom, fréquence FM (seulement pour la demander) et adresse du flux de chaque station ; gardé à la mise à jour. Le volume dit à la voix est gardé dans `speaker_volume.txt`, la dernière station dans `radio_station.txt` |
 | `MOUSE_RETRY_DELAY` | `5` | Délai entre deux recherches de la souris quand elle est absente (secondes) |
 | `HDMI_PORT` | `3` | Entrée HDMI de la TV, utilisée seulement si la TV ne donne pas l'adresse du Raspberry (normalement lue sur la TV : `cec-ctl -d /dev/cec0` affiche `Physical Address : 3.0.0.0` pour l'entrée 3) |
 | `RINGTONE_PATH` | `~/AppelerMamie/ringtone.wav` | Autre sonnerie : copier son `.mp3` dans `~/AppelerMamie`, relancer `install.sh` (il fait le `.wav`), puis indiquer ici le chemin du `.wav`. Conservé par `install.sh` ; si le fichier manque, la sonnerie du projet est jouée |

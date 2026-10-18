@@ -23,6 +23,17 @@ LANGUAGE = "fr"
 # Asked by install.sh at the first installation (option --greeting).
 GREETING_NAME = None
 
+# --- Place of the weather of the home screen (TV page) ---
+# Town, postal code and country of the Raspberry, e.g. "Clermont-Ferrand",
+# "63000", "France" (or "FR"). Asked by install.sh at the first installation
+# (options --city, --postcode, --country); each one may be None. Without a
+# town nor a postal code: no weather on the TV. Only the place is sent to the
+# weather service (Open-Meteo, through the server), never the identity of the
+# Raspberry. Restart the agent (or the Raspberry) after a change.
+WEATHER_CITY = None
+WEATHER_POSTCODE = None
+WEATHER_COUNTRY = None
+
 # --- Server connection ---
 SERVER_URL = "wss://appelermami.fr"
 
@@ -75,6 +86,41 @@ AUDIO_DEVICE = None
 # "hdmi" or "usb" = always this output.
 CALL_AUDIO_OUTPUT = "auto"
 
+# --- Robot of the home screen that reacts to sounds (sound_level.py) ---
+# True = outside calls, the volume of the microphone is measured (nothing is
+# recorded or sent): the robot of the TV page moves when someone speaks.
+# False = microphone never used outside calls.
+VOICE_REACTION = True
+
+# --- Spoken commands to the robot (voice_commands.py) ---
+# True = "Robot bonjour" (or "Bonjour robot") makes the robot wave on the TV
+# and answer on the speaker; also "Robot, quelle heure est-il ?", "quel temps
+# fait-il ?", "mets la radio", "radio 101.2", "stop", "volume 5", "appelle
+# <TV contact>". Recognized on the Raspberry itself (Vosk model installed by
+# install.sh), never during a call; needs VOICE_REACTION = True (same
+# microphone). False = no spoken commands.
+VOICE_COMMANDS = True
+
+# --- Radio asked by voice (radio.py) ---
+# Stations: name (said and shown on the TV), FM frequency (to ask for it:
+# "Robot, radio 105.5"; only a name, the sound comes from the internet) and
+# address of the stream. Frequencies of Paris: change them to those of your
+# town, add or remove stations. Played on the USB speaker.
+RADIO_STATIONS = [
+    {"name": "France Inter", "frequency": 87.8, "url": "https://icecast.radiofrance.fr/franceinter-midfi.mp3"},
+    {"name": "France Musique", "frequency": 91.7, "url": "https://icecast.radiofrance.fr/francemusique-midfi.mp3"},
+    {"name": "France Culture", "frequency": 93.5, "url": "https://icecast.radiofrance.fr/franceculture-midfi.mp3"},
+    {"name": "FIP", "frequency": 105.1, "url": "https://icecast.radiofrance.fr/fip-midfi.mp3"},
+    {"name": "Franceinfo", "frequency": 105.5, "url": "https://icecast.radiofrance.fr/franceinfo-midfi.mp3"},
+    {"name": "RTL", "frequency": 104.3, "url": "http://icecast.rtl.fr/rtl-1-44-128"},
+    {"name": "Europe 1", "frequency": 104.7, "url": "https://stream.europe1.fr/europe1.mp3"},
+    {"name": "Nostalgie", "frequency": 90.4, "url": "https://streaming.nrjaudio.fm/oug7girb92oc"},
+    {"name": "Chérie FM", "frequency": 91.3, "url": "https://cdnradio.streamakaci.com/cheriefm1.mp3"},
+    {"name": "NRJ", "frequency": 100.3, "url": "https://scdn.nrjaudio.fm/adwz2/fr/30001/mp3_128.mp3"},
+    {"name": "RFM", "frequency": 103.9, "url": "https://rfm.lmn.fm/rfm.mp3"},
+    {"name": "Radio Classique", "frequency": 101.1, "url": "http://radioclassique.ice.infomaniak.ch/radioclassique-high.mp3"},
+]
+
 # --- Resolution of the screen (display_mode.py) ---
 # "1080p" = a TV giving 4K (3840 x 2160) is set to 1920 x 1080, up to 60 Hz:
 # much lighter for the Raspberry, smoother video calls. Screens of 1920
@@ -105,6 +151,8 @@ MAX_CACHED_CALLS = 30
 MAX_CALLER_NAME_LENGTH = 30
 
 # --- Relative volumes used when mixing the TTS voice with the ringtone ---
+# (settings page of the TV: "music" 1 to 10 = RINGTONE_VOLUME 0.1 to 1.0,
+# "voice" 1 to 13 = VOICE_VOLUME 0.15 to 1.95, 10 = 1.5)
 VOICE_VOLUME = 1.5
 RINGTONE_VOLUME = 0.2
 
@@ -114,3 +162,14 @@ RINGTONE_VOLUME = 0.2
 # through `import config` without duplicating logic.
 RASPBERRY_ID = None
 DEVICE_SECRET = None
+
+
+# --- Settings changed on the TV (settings page, settings_store.py) ---
+# settings.json, written by the agent when "Apply" is confirmed on the TV,
+# takes precedence over the values above for LANGUAGE, RINGTONE_VOLUME,
+# VOICE_VOLUME and the place of the weather. install.sh writes them back here and removes it.
+try:
+    import settings_store as _settings_store
+    _settings_store.apply(globals())
+except Exception as _error:  # a broken file must never stop the Raspberry
+    print(f"⚠️ settings.json not applied ({_error})")
