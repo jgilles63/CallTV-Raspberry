@@ -20,6 +20,7 @@ tv.tv_on_and_accept = tv.tv_return = lambda: None
 sys.modules["tv_control"] = tv
 audio = types.ModuleType("tts_audio")
 audio.AlertSound = lambda: types.SimpleNamespace(play=lambda n: None, stop=lambda: None)
+audio.radio_volume = lambda: 20
 sys.modules["tts_audio"] = audio
 evdev = types.ModuleType("evdev")
 evdev.InputDevice = evdev.ecodes = evdev.list_devices = None

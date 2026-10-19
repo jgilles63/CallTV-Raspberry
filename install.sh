@@ -331,16 +331,31 @@ KEPT = ("SERVER_URL", "UNAUTHORIZED_RETRY_DELAY", "MOUSE_DEVICE", "MOUSE_RETRY_D
         "RADIO_STATIONS")
 # Settings written on several lines (a list from "[" to the "]" at the start of a line)
 BLOCKS = ("RADIO_STATIONS",)
+# The stations written in config.py before 19/10/2026 (Paris): not one's own
+# list, they give way to the stations of the country of the TV (None)
+FORMER_STATIONS = {
+    ("87.8", "https://icecast.radiofrance.fr/franceinter-midfi.mp3"), ("91.7", "https://icecast.radiofrance.fr/francemusique-midfi.mp3"),
+    ("93.5", "https://icecast.radiofrance.fr/franceculture-midfi.mp3"), ("105.1", "https://icecast.radiofrance.fr/fip-midfi.mp3"),
+    ("105.5", "https://icecast.radiofrance.fr/franceinfo-midfi.mp3"), ("104.3", "http://icecast.rtl.fr/rtl-1-44-128"),
+    ("104.7", "https://stream.europe1.fr/europe1.mp3"), ("90.4", "https://streaming.nrjaudio.fm/oug7girb92oc"),
+    ("91.3", "https://cdnradio.streamakaci.com/cheriefm1.mp3"), ("100.3", "https://scdn.nrjaudio.fm/adwz2/fr/30001/mp3_128.mp3"),
+    ("103.9", "https://rfm.lmn.fm/rfm.mp3"), ("101.1", "http://radioclassique.ice.infomaniak.ch/radioclassique-high.mp3"),
+}
 # Greeting of the announcement before GREETING_NAME existed
 FORMER_GREETING = {"fr": "mamie", "en": "grandma", "es": "abuela"}
 
 
 def setting(key, text):
-    if key in BLOCKS:
-        match = re.search(rf"^{key} *= *\[.*?^\]$", text, re.M | re.S)
-    else:
+    match = re.search(rf"^{key} *= *\[.*?^\]$", text, re.M | re.S) if key in BLOCKS else None
+    if not match:
         match = re.search(rf"^{key} *=.*$", text, re.M)
     return match.group(0) if match else None
+
+
+def former_stations(block):
+    """The list of stations of the project before 19/10/2026 (not changed by hand)."""
+    pairs = set(re.findall(r'"frequency": *([0-9.]+), *"url": *"([^"]+)"', block))
+    return pairs == FORMER_STATIONS and block.count('"url"') == len(FORMER_STATIONS)
 
 
 with open(new_path, encoding="utf-8") as f:
@@ -355,6 +370,9 @@ if old_path:
             continue
         if key == "MOUSE_DEVICE" and re.search(r'"/dev/input/event\d+"', old_line):
             print("mouse=" + old_line.split("=", 1)[1].strip())
+            continue
+        if key == "RADIO_STATIONS" and former_stations(old_line):
+            print("radio=country")
             continue
         new = new.replace(new_line, old_line, 1)
 
@@ -418,6 +436,9 @@ if grep -q "^settings=absorbed" <<< "$config_notes"; then
 fi
 if [ -n "$old_config" ]; then
   msg install.configKept backup="$old_config"
+fi
+if grep -q "^radio=country$" <<< "$config_notes"; then
+  msg install.radioCountry
 fi
 mouse_reset="$(sed -n 's/^mouse=//p' <<< "$config_notes")"
 if [ -n "$mouse_reset" ]; then

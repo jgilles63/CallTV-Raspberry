@@ -186,7 +186,8 @@ async def agent_settings():
     cfg.BASE_DIR = Path(tempfile.mkdtemp())
     await a.handle_message({"type": "settings_request"})
     check("settings asked: current values and the radio stations (not changed there)", sent[-1] == {
-        "type": "settings", "values": {"language": "fr", "ringtoneLevel": 2, "ringtoneVoiceLevel": 10, "city": "Madrid",
+        "type": "settings", "values": {"language": "fr", "ringtoneLevel": 2, "ringtoneVoiceLevel": 10,
+                                       "radioLevel": 2, "robotVoiceLevel": 8, "city": "Madrid",
                                        "postcode": "28051", "country": "Espagne"},
         "stations": [{"name": "France Inter", "frequency": "87.8"}]}, sent[-1])
 
@@ -218,11 +219,29 @@ async def agent_settings():
     await a.apply_settings({"language": "es", "city": "Lyon"})
     check("nothing different: nothing saved, no restart", sent == [{"type": "settings_applied", "ok": True, "restart": False}]
           and restarts == [])
+    tts = agent.tts_audio
+    tts.save_radio_volume(37)
+    sent.clear()
+    await a.apply_settings({"radioLevel": 4, "robotVoiceLevel": 6, "language": "es", "city": "Lyon"})
+    check("volume of the radio unchanged on the page (level 4 = its 37 %): its exact volume kept; voice of the robot 6",
+          tts.radio_volume() == 37 and tts.voice_level() == 6 and restarts == []
+          and sent == [{"type": "settings_applied", "ok": True, "restart": False}], sent)
+    sent.clear()
+    await a.apply_settings({"radioLevel": 7, "robotVoiceLevel": 6})
+    check("volume of the radio changed (7): 70 %, the radio page told, no restart",
+          tts.radio_volume() == 70 and any(m["type"] == "radio_state" and m["volume"] == 70 for m in sent) and restarts == [], sent)
+    await a.apply_settings({"radioLevel": 0})
+    check("radio level 0: silent (0 %)", tts.radio_volume() == 0)
+    for bad in ({"radioLevel": 11}, {"robotVoiceLevel": 0}, {"robotVoiceLevel": True}, {"radioLevel": "5"}):
+        await a.apply_settings(bad)
+    check("strange volumes: refused", tts.radio_volume() == 0 and tts.voice_level() == 6)
+    check("validate_volumes: known volumes only", st.validate_volumes({"radioLevel": 3, "robotVoiceLevel": 10, "x": 1}) ==
+          {"radioLevel": 3, "robotVoiceLevel": 10} and st.validate_volumes(None) == {})
     a.call_window, a.current_call_id = True, "c1"
     sent.clear()
-    await a.apply_settings({"city": "Paris"})
+    await a.apply_settings({"city": "Paris", "robotVoiceLevel": 2})
     check("during a call (or ringing): refused", sent == [{"type": "settings_applied", "ok": False, "reason": "call"}]
-          and st.load(cfg.BASE_DIR)["WEATHER_CITY"] == "Lyon")
+          and st.load(cfg.BASE_DIR)["WEATHER_CITY"] == "Lyon" and agent.tts_audio.voice_level() == 6)
     a.call_window, a.current_call_id = False, None
     cfg.LANGUAGE = "fr"
 

@@ -18,9 +18,13 @@ Text-to-speech (TTS) and playback of the call sound.
     detected automatically, see config.AUDIO_DEVICE).
   - Says the answers of the robot to the spoken commands (say: one sentence
     of i18n.py, cached, on the same speaker).
-  - Volume of the speaker set by voice ("Robot, volume 5": 1 to 10, saved in
-    speaker_volume.txt): the robot and the radio use it; the ringtone is
-    always at 100 % (it must be heard).
+  - Two volumes of the speaker (decision of 19/10/2026: a quiet radio must
+    never make the robot hard to hear): the radio, 0 to 100 % in
+    radio_volume.txt (20 % at first; slider of the radio page, settings
+    page, "Robot, volume 5" while it plays = 50 %), and the voice of the
+    robot, level 1 to 10 in voice_volume.txt (8 at first; settings page,
+    "Robot, volume 5" when the radio is off). The ringtone is always at
+    100 % (it must be heard).
 """
 
 import glob
@@ -54,10 +58,17 @@ CARD_LINE = re.compile(r"^\s*(\d+)\s+\[(\S+)\s*\]:\s+(\S+)\s+-\s+(.*)$")
 
 # Volume controls tried in this order (their name depends on the card model)
 VOLUME_CONTROLS = ("PCM", "Speaker", "Master", "Headphone")
-# Volume of the robot and the radio: level 1 to 10 (= 10 % to 100 %), kept in
-# this file of the application folder
-VOLUME_FILE_NAME = "speaker_volume.txt"
+# Volume of the radio (0 to 100 %) and of the voice of the robot (level 1 to
+# 10 = 10 % to 100 %), kept in these files of the application folder;
+# speaker_volume.txt: volume of the radio before 19/10/2026 (a level), read
+# once if radio_volume.txt does not exist yet
+RADIO_VOLUME_FILE_NAME = "radio_volume.txt"
+OLD_VOLUME_FILE_NAME = "speaker_volume.txt"
+VOICE_VOLUME_FILE_NAME = "voice_volume.txt"
 VOLUME_LEVELS = range(1, 11)
+# Never set: these volumes
+DEFAULT_RADIO_VOLUME = 20
+DEFAULT_VOICE_LEVEL = 8
 # Voice of the robot in its WAV files (its loudness then follows the volume
 # said by voice); VOICE_VOLUME is the voice of the announcement of a call
 ROBOT_VOICE_VOLUME = 1.5
@@ -141,37 +152,56 @@ def set_max_volume(card):
     set_card_volume(card, 100)
 
 
-def volume_file():
-    return config.BASE_DIR / VOLUME_FILE_NAME
-
-
-def volume_level():
-    """Volume of the robot and the radio, 1 to 10 (10 if never set)."""
+def read_level(path, default, levels=VOLUME_LEVELS):
     try:
-        level = int(volume_file().read_text(encoding="utf-8").strip())
+        level = int(path.read_text(encoding="utf-8").strip())
     except (OSError, ValueError, AttributeError):
-        return 10
-    return level if level in VOLUME_LEVELS else 10
+        return default
+    return level if level in levels else default
 
 
-def save_volume_level(level):
-    """Keeps the volume said by voice (1 to 10); False if not valid or not saved."""
-    if level not in VOLUME_LEVELS:
+def write_level(path, level, levels=VOLUME_LEVELS):
+    """Keeps a volume; False if not valid or not saved."""
+    if isinstance(level, bool) or level not in levels:
         return False
     try:
-        volume_file().write_text(f"{level}\n", encoding="utf-8")
+        path.write_text(f"{level}\n", encoding="utf-8")
     except OSError as e:
         print(f"⚠️ Volume not saved ({e})")
         return False
     return True
 
 
-def set_speaker_volume(level=None):
+def radio_volume():
+    """Volume of the radio, 0 to 100 % (DEFAULT_RADIO_VOLUME if never set)."""
+    volume = read_level(config.BASE_DIR / RADIO_VOLUME_FILE_NAME, None, range(0, 101))
+    if volume is None:
+        old_level = read_level(config.BASE_DIR / OLD_VOLUME_FILE_NAME, None)
+        volume = old_level * 10 if old_level else DEFAULT_RADIO_VOLUME
+    return volume
+
+
+def save_radio_volume(percent):
+    """Keeps the volume of the radio (0 to 100 %); False if not valid or not saved."""
+    return write_level(config.BASE_DIR / RADIO_VOLUME_FILE_NAME, percent, range(0, 101))
+
+
+def voice_level():
+    """Volume of the voice of the robot, 1 to 10 (DEFAULT_VOICE_LEVEL if never set)."""
+    return read_level(config.BASE_DIR / VOICE_VOLUME_FILE_NAME, DEFAULT_VOICE_LEVEL)
+
+
+def save_voice_level(level):
+    """Keeps the volume of the voice of the robot (1 to 10); False if not valid or not saved."""
+    return write_level(config.BASE_DIR / VOICE_VOLUME_FILE_NAME, level)
+
+
+def set_speaker_volume(percent=None):
     """
-    Volume of the speaker for the robot and the radio: the level said by
-    voice, or level (1 to 10: the radio turned down while the robot listens).
+    Volume of the speaker for the radio: its volume, or percent (the radio
+    turned down while the robot listens).
     """
-    set_card_volume(find_ringing_card(), (level or volume_level()) * 10, mapped=True)
+    set_card_volume(find_ringing_card(), radio_volume() if percent is None else percent, mapped=True)
 
 
 def clean_greeting():
@@ -412,7 +442,7 @@ def play_wav(wav):
     if not wav:
         return False
     card = find_ringing_card()
-    set_card_volume(card, volume_level() * 10, mapped=True)
+    set_card_volume(card, voice_level() * 10, mapped=True)
     try:
         result = subprocess.run(["aplay", "-q", "-D", playback_device(card), wav],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)

@@ -20,6 +20,11 @@ Main agent:
   radio" / "radio 101.2" / "stop" (radio.py, radio_state for the TV page),
   "Robot, volume 5", "Robot, appelle <TV contact>" (tv_call_request: the
   call starts from this TV; contacts asked with tv_contacts_request);
+- radio page of the TV (radio_request / radio_play / radio_stop /
+  radio_volume): a station chosen there is played (no sentence said), its
+  slider sets the volume of the radio at once; while the page is open
+  (radio_watch), the level of the sound is sent every second (radio_level,
+  wave drawn on the page);
 - settings page of the TV (settings_request / settings_apply): language,
   ringtone volume, place of the weather saved in settings.json
   (settings_store.py), speech model of a new language downloaded
@@ -81,6 +86,11 @@ CLICK_DECLINE_GRACE = 0.5
 # Settings applied: the agent restarts this long after telling the TV page
 # (systemd starts it again 10 s later, Restart=always)
 SETTINGS_RESTART_DELAY = 1.5
+# Radio page of the TV open (radio_watch): the levels of the sound are sent
+# every RADIO_LEVEL_EVERY seconds, until RADIO_WATCH_SECONDS without news of
+# the page (it asks again every minute while it is open)
+RADIO_LEVEL_EVERY = 1.0
+RADIO_WATCH_SECONDS = 90
 # Call asked by voice refused by the server: sentence said by the robot
 CALL_ERROR_SENTENCES = {"DEVICE_OFFLINE": "voice.callOffline", "DEVICE_BUSY": "voice.callBusy"}
 
@@ -153,6 +163,9 @@ class TVControlAgent:
         # Name of the contact called by voice, until the call starts or is refused
         self.voice_call_name = None
         self.voice.set_choices(stations=radio.stations())
+        # Radio page of the TV open until then (levels of the sound sent)
+        self.radio_watch_until = 0.0
+        self.radio_level_task = None
 
     # ---------------------------------------------------------
     # SIGUSR1 signal
@@ -392,6 +405,21 @@ class TVControlAgent:
         elif msg_type == "radio_stop":
             # "Stop" button of the TV page
             await self.stop_radio()
+
+        elif msg_type == "radio_request":
+            # Radio page of the TV opened: the stations and the one playing
+            await self.send_radio_state()
+
+        elif msg_type == "radio_play":
+            # Station chosen on the radio page of the TV
+            await self.play_radio_from_page(data.get("frequency"))
+
+        elif msg_type == "radio_watch":
+            self.watch_radio(data.get("on") is True)
+
+        elif msg_type == "radio_volume":
+            # Slider of the radio page: heard at once
+            await self.set_radio_volume(data.get("percent"))
 
         elif msg_type == "settings_request":
             await self.send_settings()
@@ -851,7 +879,7 @@ class TVControlAgent:
             elif name == "time":
                 text = robot_answers.time_sentence(datetime.datetime.now())
             elif name == "weather":
-                text = robot_answers.weather_sentence(await self.ask_weather())
+                text = robot_answers.weather_sentence(await self.ask_weather(), datetime.datetime.now())
             elif name == "health":
                 # The health report (about 2 s; the TV is asked through CEC, no call now)
                 report = await asyncio.to_thread(diagnostics.run_checks)
@@ -860,11 +888,17 @@ class TVControlAgent:
                 station = radio.find(value) if value else radio.default_station()
                 text = t("voice.radioOn", station=station["name"]) if station else t("voice.radioNone")
                 if station:
-                    turned_on = not radio_was_on
-                    after = lambda: self.start_radio(station, turned_on=turned_on)  # noqa: E731
+                    after = lambda: self.start_radio(station)  # noqa: E731
             elif name == "volume":
+                # The radio while it plays (5 = 50 %), else the voice of the
+                # robot (said at its new volume)
                 level = int(value) if value.isdigit() else 0
-                if not tts_audio.save_volume_level(level):
+                if radio_was_on:
+                    if level not in tts_audio.VOLUME_LEVELS or not tts_audio.save_radio_volume(level * 10):
+                        return
+                    # The slider of the radio page follows
+                    await self.send_radio_state()
+                elif not tts_audio.save_voice_level(level):
                     return
                 text = t("voice.volume", level=level)
             else:  # call
@@ -914,16 +948,50 @@ class TVControlAgent:
                 await asyncio.to_thread(self.radio.resume)
             self.voice.mute(0.8)
 
-    async def start_radio(self, station, turned_on=True):
+    async def start_radio(self, station):
         """
-        Plays a station asked by voice; the TV page shows it (robot with
-        headphones). Radio turned on (not another station): at volume 2.
+        Plays a station (asked by voice or on the radio page) at the volume
+        of the radio; the TV page shows it (robot with headphones).
         """
-        if turned_on:
-            tts_audio.save_volume_level(radio.START_LEVEL)
         await asyncio.to_thread(self.radio.play, station)
         await self.send_message({"type": "sound_activity", "active": False})
         await self.send_radio_state()
+
+    async def play_radio_from_page(self, frequency):
+        """
+        Station chosen on the radio page of the TV (Play, a station of the
+        list, the tuner): played at once, nothing said; not during a call.
+        """
+        station = radio.find(frequency) if isinstance(frequency, str) else None
+        if station is None or self.in_call():
+            await self.send_radio_state()
+            return
+        if self.radio.playing and self.radio.station["frequency"] == station["frequency"]:
+            await self.send_radio_state()
+            return
+        await self.start_radio(station)
+
+    async def set_radio_volume(self, percent):
+        """Volume of the radio (0 to 100 %) from the slider of the radio page: kept, heard at once."""
+        if not tts_audio.save_radio_volume(percent):
+            return
+        if self.radio.playing:
+            await asyncio.to_thread(tts_audio.set_speaker_volume)
+
+    def watch_radio(self, on):
+        """Radio page open (on) or closed: the levels of the sound are sent meanwhile."""
+        self.radio_watch_until = time.monotonic() + RADIO_WATCH_SECONDS if on else 0.0
+        if on and (self.radio_level_task is None or self.radio_level_task.done()):
+            self.radio.levels()
+            self.radio_level_task = asyncio.create_task(self.send_radio_levels())
+
+    async def send_radio_levels(self):
+        """Levels of the sound of the radio (wave of the radio page), every second while it is open."""
+        while self.registered and time.monotonic() < self.radio_watch_until:
+            await asyncio.sleep(RADIO_LEVEL_EVERY)
+            levels = self.radio.levels()
+            if self.radio.playing and levels and time.monotonic() < self.radio_watch_until:
+                await self.send_message({"type": "radio_level", "levels": levels})
 
     async def stop_radio(self):
         """Stops the radio (stop, the button, a call)."""
@@ -932,10 +1000,11 @@ class TVControlAgent:
             await self.send_radio_state()
 
     async def send_radio_state(self):
-        """Radio playing or not, and its station, for the TV page."""
+        """Radio playing or not, its station, and the stations of config.py, for the TV page."""
         if not self.registered:
             return
-        state = {"type": "radio_state", "playing": self.radio.on}
+        state = {"type": "radio_state", "playing": self.radio.on, "volume": tts_audio.radio_volume(),
+                 "stations": [{"name": s["name"], "frequency": s["frequency"]} for s in radio.stations()]}
         if self.radio.on:
             state["station"] = self.radio.station["name"]
             state["frequency"] = self.radio.station["frequency"]
@@ -951,6 +1020,8 @@ class TVControlAgent:
             "language": config.LANGUAGE,
             "ringtoneLevel": settings_store.ringtone_level(config.RINGTONE_VOLUME),
             "ringtoneVoiceLevel": settings_store.voice_level(config.VOICE_VOLUME),
+            "radioLevel": round(tts_audio.radio_volume() / 10),
+            "robotVoiceLevel": tts_audio.voice_level(),
             "city": config.WEATHER_CITY or "",
             "postcode": config.WEATHER_POSTCODE or "",
             "country": config.WEATHER_COUNTRY or "",
@@ -972,6 +1043,7 @@ class TVControlAgent:
         if self.in_call():
             await self.send_message({"type": "settings_applied", "ok": False, "reason": "call"})
             return
+        await self.apply_volumes(settings_store.validate_volumes(values))
         changes = {key: value for key, value in settings_store.validate(values).items()
                    if getattr(config, key, None) != value}
         if not changes:
@@ -993,6 +1065,22 @@ class TVControlAgent:
         if restart:
             await asyncio.sleep(SETTINGS_RESTART_DELAY)
             self.restart_agent()
+
+    async def apply_volumes(self, volumes):
+        """
+        Volumes of the radio and of the voice of the robot from the settings
+        page: kept if they changed (a level of the radio not changed on the
+        page keeps its exact volume of the slider), heard at once.
+        """
+        level = volumes.get("radioLevel")
+        if level is not None and level != round(tts_audio.radio_volume() / 10):
+            tts_audio.save_radio_volume(level * 10)
+            if self.radio.playing:
+                await asyncio.to_thread(tts_audio.set_speaker_volume)
+            await self.send_radio_state()
+        level = volumes.get("robotVoiceLevel")
+        if level is not None and level != tts_audio.voice_level():
+            tts_audio.save_voice_level(level)
 
     async def send_calendar(self, notes=None, done=None, error=None):
         """Notes of the calendar to the TV page (after a change: done, error)."""
@@ -1036,7 +1124,8 @@ class TVControlAgent:
     async def ask_weather(self):
         """Weather of the place of this Raspberry, asked to the server (None if no answer)."""
         self.weather_waiter = asyncio.get_running_loop().create_future()
-        await self.send_message({"type": "weather_request"})
+        # The hours of today and tomorrow too: the answer speaks of what is left of the day
+        await self.send_message({"type": "weather_request", "hours": True})
         try:
             return await asyncio.wait_for(self.weather_waiter, WEATHER_ANSWER_TIMEOUT)
         except asyncio.TimeoutError:

@@ -17,6 +17,10 @@ identity or anything else (ROADMAP 2.15).
     (10 = 100 % = 1.5, the volume of origin; 13 = 130 %);
   - WEATHER_CITY / WEATHER_POSTCODE / WEATHER_COUNTRY: place of the weather.
 
+Two more volumes, kept by tts_audio.py and not in config.py (validate_volumes):
+the radio (level 0 to 10 on the page = 0 to 100 %) and the voice of the
+robot (level 1 to 10).
+
 The radio stations are shown on the page, not changed there (config.py).
 The agent writes the file (save) when "Apply" is confirmed on the TV, then
 restarts itself (systemd starts it again) if needed.
@@ -82,6 +86,25 @@ def validate(values):
     for key, name in zip(PLACE_KEYS, ("city", "postcode", "country")):
         if name in values and (values[name] is None or isinstance(values[name], str)):
             clean[key] = clean_place(values[name], key)
+    return clean
+
+
+RADIO_LEVELS = range(0, 11)
+ROBOT_VOICE_LEVELS = range(1, 11)
+
+
+def validate_volumes(values):
+    """
+    Volumes of the radio and of the voice of the robot sent by the page
+    ({"radioLevel", "robotVoiceLevel"}, each one optional) -> the valid ones.
+    """
+    if not isinstance(values, dict):
+        return {}
+    clean = {}
+    for key, levels in (("radioLevel", RADIO_LEVELS), ("robotVoiceLevel", ROBOT_VOICE_LEVELS)):
+        level = values.get(key)
+        if isinstance(level, int) and not isinstance(level, bool) and level in levels:
+            clean[key] = level
     return clean
 
 

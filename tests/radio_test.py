@@ -7,8 +7,12 @@
 # scale of the ear, ringtone always at 100 %; phrases with a frequency, a
 # level or a contact name; agent: radio / stop / volume / call answered,
 # radio stopped by a call and by the button, TV contacts from the server,
-# refusal of the call said.
+# refusal of the call said. Radio page of the TV (ROADMAP 2.18): level of the
+# sound measured between ffmpeg and aplay, station played from the page,
+# levels sent while the page is open.
+import array
 import asyncio
+import io
 import json
 import sys
 import tempfile
@@ -34,6 +38,13 @@ cfg.RADIO_STATIONS = [
     "not a station",
 ]
 sys.modules["config"] = cfg
+# Stations sent to the TV page with the state of the radio
+STATIONS = [{"name": "France Inter", "frequency": "87.8"}, {"name": "Radio Test", "frequency": "101.2"}]
+
+
+def radio_state(playing, **station):
+    return {"type": "radio_state", "playing": playing, "volume": tts_audio.radio_volume(), "stations": STATIONS, **station}
+
 
 evdev = types.ModuleType("evdev")
 evdev.InputDevice = object
@@ -69,21 +80,61 @@ check("station of a frequency", radio.find("101.2")["name"] == "Radio Test" and 
       and radio.find("99.9") is None and radio.find("abc") is None)
 check("\"mets la radio\" the first time: the first station", radio.default_station()["name"] == "France Inter")
 
+# --- Stations of the country of the TV (radio_stations.py, ROADMAP 2.21) ---
+import radio_stations as rs  # noqa: E402
+check("country names: fr / en / es / pt, accents and case ignored",
+      [rs.country_code(c) for c in ("Espagne", "ESPAÑA", " spain ", "es", "États-Unis", "USA", "Estados Unidos", "Royaume-Uni",
+                                    "Angleterre", "England", "uk", "Mexique", "México", "Portugal", "France", "Francia")]
+      == ["ES", "ES", "ES", "ES", "US", "US", "US", "GB", "GB", "GB", "GB", "MX", "MX", "PT", "FR", "FR"])
+check("unknown country: none", rs.country_code("Italie") is None and rs.country_code(None) is None and rs.country_code("") is None)
+check("unknown country: the stations of the language (es -> Spain, en -> United Kingdom), else France",
+      rs.stations_for("Italie", "es")[0]["name"] == "Radio Nacional" and rs.stations_for(None, "en")[0]["name"] == "BBC Radio 1"
+      and rs.stations_for(None, None)[0]["name"] == "France Inter")
+for code, country_stations in rs.STATIONS.items():
+    frequencies = [radio.frequency_text(s["frequency"]) for s in country_stations]
+    check(f"{code}: 10 to 12 stations, a name, an FM frequency each (all different), an http(s) stream",
+          10 <= len(country_stations) <= 12 and all(s["name"] for s in country_stations) and None not in frequencies
+          and len(set(frequencies)) == len(frequencies)
+          and all(s["url"].startswith(("https://", "http://")) and " " not in s["url"] for s in country_stations), code)
+own_stations, cfg.RADIO_STATIONS = cfg.RADIO_STATIONS, None
+cfg.WEATHER_COUNTRY = "Espagne"
+check("no list of one's own (None): the stations of the country of the settings page",
+      [s["name"] for s in radio.stations()][:4] == ["Radio Nacional", "Radio Clásica", "Radio 3", "Cadena SER"]
+      and radio.find("105.4")["name"] == "Cadena SER")
+check("... their names said to the robot in Spanish (\"Robot, pon Cadena SER\", \"Robot, Los 40\")",
+      v.phrase_table("es", radio.stations())["pon cadena ser"] == "radio:105.4"
+      and v.phrase_table("es", radio.stations())["los cuarenta"] == "radio:93.9")
+rs.STATIONS["ES"][0]["name"] = "changed"
+check("the lists of the module are never changed by the radio", rs.STATIONS["ES"][0]["name"] == "changed"
+      and radio.stations()[0]["name"] == "changed")
+rs.STATIONS["ES"][0]["name"] = "Radio Nacional"
+cfg.WEATHER_COUNTRY = "Mexique"
+check("Mexique: the stations of Mexico City", radio.stations()[0]["name"] == "W Radio")
+cfg.RADIO_STATIONS, cfg.WEATHER_COUNTRY = own_stations, None
+check("a list of one's own in config.py wins over the country", radio.stations()[0]["name"] == "France Inter")
+
 # --- Volume (1 to 10) ---
 amixer = []
 tts_audio.subprocess.run = lambda command, **kw: amixer.append(command) or types.SimpleNamespace(returncode=0)
 tts_audio.find_ringing_card = lambda: {"id": "AUDIO", "name": "USB"}
-check("volume never set: 10 (100 %)", tts_audio.volume_level() == 10)
-check("volume 4 kept", tts_audio.save_volume_level(4) and tts_audio.volume_level() == 4)
-check("volume 0, 11, text: refused", not tts_audio.save_volume_level(0) and not tts_audio.save_volume_level(11)
-      and not tts_audio.save_volume_level("5") and tts_audio.volume_level() == 4)
-(cfg.BASE_DIR / tts_audio.VOLUME_FILE_NAME).write_text("99")
-check("broken volume file: 10", tts_audio.volume_level() == 10)
-tts_audio.save_volume_level(4)
+check("radio volume never set: 20 %", tts_audio.radio_volume() == 20)
+(cfg.BASE_DIR / tts_audio.OLD_VOLUME_FILE_NAME).write_text("3\n")
+check("old volume file of the radio (level 3, before 19/10/2026): 30 %", tts_audio.radio_volume() == 30)
+check("radio volume 37 % kept (slider of the radio page)", tts_audio.save_radio_volume(37) and tts_audio.radio_volume() == 37)
+check("0 % allowed (silent); 101, -1, text, True: refused", tts_audio.save_radio_volume(0) and tts_audio.radio_volume() == 0
+      and not tts_audio.save_radio_volume(101) and not tts_audio.save_radio_volume(-1) and not tts_audio.save_radio_volume("5")
+      and not tts_audio.save_radio_volume(True) and tts_audio.radio_volume() == 0)
+(cfg.BASE_DIR / tts_audio.RADIO_VOLUME_FILE_NAME).write_text("999")
+check("broken radio volume file: the old file (30 %)", tts_audio.radio_volume() == 30)
+check("voice of the robot never set: 8 (not the volume of the radio)", tts_audio.voice_level() == 8)
+check("voice of the robot kept apart", tts_audio.save_voice_level(6) and tts_audio.voice_level() == 6
+      and tts_audio.radio_volume() == 30 and not tts_audio.save_voice_level(0) and tts_audio.voice_level() == 6)
+tts_audio.save_voice_level(8)
+tts_audio.save_radio_volume(40)
 tts_audio.set_speaker_volume()
 check("speaker at 40 % on the scale of the ear (amixer -M)", amixer[-1] == ["amixer", "-M", "-c", "AUDIO", "sset", "PCM", "40%"], amixer[-1])
-tts_audio.set_speaker_volume(1)
-check("turned down while the robot listens: level 1 (10 %)", amixer[-1][-1] == "10%", amixer[-1])
+tts_audio.set_speaker_volume(10)
+check("turned down while the robot listens: 10 %", amixer[-1][-1] == "10%", amixer[-1])
 tts_audio.set_max_volume({"id": "AUDIO"})
 check("ringtone: always 100 % (not the voice level)", amixer[-1] == ["amixer", "-c", "AUDIO", "sset", "PCM", "100%"], amixer[-1])
 
@@ -93,6 +144,7 @@ class FakeProcess:
     def __init__(self, command, **kwargs):
         self.command, self.kwargs = command, kwargs
         self.stdout = types.SimpleNamespace(close=lambda: None) if kwargs.get("stdout") == radio.subprocess.PIPE else None
+        self.stdin = None
         self.ended = None
         self.terminated = False
         started.append(self)
@@ -120,11 +172,17 @@ check("... only http / https streams (no local file)",
       reader.command[reader.command.index("-protocol_whitelist") + 1] == "http,https,tcp,tls,crypto")
 check("... and comes back after a short cut of the internet", "-reconnect" in reader.command)
 check("aplay plays it on the USB speaker", aplay.command[:4] == ["aplay", "-q", "-D", "plughw:CARD=AUDIO,DEV=0"])
+check("... the sound goes through the agent (level of the sound measured on the way)",
+      reader.kwargs["stdout"] == radio.subprocess.PIPE and aplay.kwargs["stdin"] == radio.subprocess.PIPE)
 check("at the volume said by voice", amixer[-1][-1] == "40%")
 check("playing, last station kept", player.playing and (cfg.BASE_DIR / radio.LAST_STATION_FILE_NAME).read_text().strip() == "101.2")
 check("\"mets la radio\" next time: the last station", radio.default_station()["name"] == "Radio Test")
 player.duck()
-check("robot listening: radio turned down to level 1", amixer[-1][-1] == "10%")
+check("robot listening: radio turned down to 10 %", amixer[-1][-1] == "10%")
+tts_audio.save_radio_volume(5)
+player.duck()
+check("... never louder than the radio itself (5 %)", amixer[-1][-1] == "5%")
+tts_audio.save_radio_volume(40)
 player.unduck()
 check("... then back to its volume", amixer[-1][-1] == "40%")
 player.pause()
@@ -140,6 +198,44 @@ check("stream ended by itself (internet lost): radio off", player.check() is Tru
 player.play(radio.find("87.8"))
 player.stop()
 check("stop: radio off", not player.on and started[-1].terminated)
+
+
+# --- Level of the sound (wave of the radio page) ---
+def tone(peak, frames=radio.CHUNK_BYTES // 4):
+    return array.array("h", [peak, -peak] * frames).tobytes()
+
+
+check("level: silence 0, full sound 100, half sound (-6 dB) 88",
+      radio.level_of(tone(0)) == 0 and radio.level_of(tone(32767)) == 100 and radio.level_of(tone(16384)) == 88,
+      (radio.level_of(tone(16384)),))
+check("level: very quiet (under -50 dB) 0, odd or empty piece: no crash",
+      radio.level_of(tone(50)) == 0 and radio.level_of(b"\x01") == 0 and radio.level_of(tone(32767)[:-1]) == 100)
+
+
+class Sink(io.BytesIO):
+    def close(self):
+        self.closed_by_pump = True
+
+
+source, sink = io.BytesIO(tone(0) + tone(32767) + tone(16384)[:100]), Sink()
+pumped = radio.Radio(popen=FakeProcess)
+pumped.pump(source, sink)
+check("ffmpeg -> aplay: the whole sound passed on, one level per 50 ms piece",
+      sink.getvalue() == tone(0) + tone(32767) + tone(16384)[:100] and pumped.levels() == [0, 100, 88]
+      and sink.closed_by_pump, pumped.levels())
+check("levels taken: none left until new sound", pumped.levels() == [])
+
+
+class DeadSink(Sink):
+    def write(self, data):
+        raise BrokenPipeError("aplay stopped")
+
+
+pumped.pump(io.BytesIO(tone(100) * 3), DeadSink())
+check("aplay stopped (pause, stop): the pump ends without a crash", len(pumped.levels()) == 1)
+for _ in range(radio.MAX_LEVELS + 5):
+    pumped.sound_levels.append(1)
+check("levels never taken (page closed): the last MAX_LEVELS only", len(pumped.levels()) == radio.MAX_LEVELS)
 
 
 def broken_popen(command, **kwargs):
@@ -269,20 +365,21 @@ async def agent_behaviour():
     check("TV contacts of the server: kept, names added to the spoken commands",
           a.contacts == [{"deviceId": "rpi-mamie", "name": "Mamie"}] and a.voice.contacts == a.contacts, a.contacts)
 
-    tts_audio.save_volume_level(8)
+    tts_audio.save_radio_volume(20)
     await command("radio")
-    check("radio turned on: volume 2 (not too loud)", tts_audio.volume_level() == 2 and amixer[-1][-1] == "20%")
+    check("radio turned on: at its volume (20 %)", tts_audio.radio_volume() == 20 and amixer[-1][-1] == "20%")
+    check("... the voice of the robot stays loud (8)", tts_audio.voice_level() == 8)
     check("\"mets la radio\": the robot says the last station, then the radio plays",
           texts[-1] == "Je mets France Inter." and a.radio.playing and a.radio.station["name"] == "France Inter", texts)
     check("... the TV page shows it (robot with headphones)",
-          {"type": "radio_state", "playing": True, "station": "France Inter", "frequency": "87.8"} in sent, sent)
+          radio_state(True, station="France Inter", frequency="87.8") in sent, sent)
     check("... the robot stops walking (it listens to the radio)", {"type": "sound_activity", "active": False} in sent)
     sent.clear()
     await a.on_sound_activity(True)
     check("radio on: its sound does not make the robot walk", sent == [])
 
     await a.on_voice_command(v.LISTENING)
-    check("\"robot\" heard while the radio plays: green, radio turned down to level 1",
+    check("\"robot\" heard while the radio plays: green, radio turned down to 10 %",
           {"type": "voice_command", "command": "listening"} in sent and amixer[-1][-1] == "10%")
     await a.on_voice_command(v.LISTENING_OFF)
     check("no question: the radio back to its volume (2)", amixer[-1][-1] == "20%")
@@ -291,11 +388,16 @@ async def agent_behaviour():
           texts[-1] == "Je mets Radio Test." and played[-1] == ("now.wav", False) and a.radio.station["name"] == "Radio Test"
           and a.radio.playing)
 
+    voice_before = tts_audio.voice_level()
+    sent.clear()
     await command("volume:7")
-    check("\"volume 7\": kept, said, the radio goes on louder",
-          tts_audio.volume_level() == 7 and texts[-1] == "Volume 7." and a.radio.playing and amixer[-1][-1] == "70%")
+    check("\"volume 7\" while the radio plays: the radio at 70 %, the voice of the robot unchanged",
+          tts_audio.radio_volume() == 70 and texts[-1] == "Volume 7." and a.radio.playing and amixer[-1][-1] == "70%"
+          and tts_audio.voice_level() == voice_before)
+    check("... the slider of the radio page follows (radio_state with the volume)",
+          any(m.get("type") == "radio_state" and m.get("volume") == 70 for m in sent), sent)
     await command("radio:87.8")
-    check("another station while the radio plays: volume kept (7)", tts_audio.volume_level() == 7 and a.radio.station["name"] == "France Inter", (tts_audio.volume_level(), a.radio.station))
+    check("another station while the radio plays: volume kept (70 %)", tts_audio.radio_volume() == 70 and a.radio.station["name"] == "France Inter")
     await command("time")
     check("a question while the radio plays: answered, then the radio goes on", texts[-1].startswith("Il est ") and a.radio.playing)
     agent.diagnostics.run_checks = lambda *args: {"checks": [{"id": "mouse", "status": "ok", "value": "m"},
@@ -310,9 +412,14 @@ async def agent_behaviour():
     said_before = len(texts)
     await command("stop")
     check("\"stop\": radio off, nothing said, the TV page told",
-          not a.radio.on and len(texts) == said_before and sent[-1] == {"type": "radio_state", "playing": False}, sent)
+          not a.radio.on and len(texts) == said_before and sent[-1] == radio_state(False), sent)
     await command("stop")
     check("\"stop\" without radio: nothing", not a.radio.on)
+    radio_before = tts_audio.radio_volume()
+    await command("volume:9")
+    check("\"volume 9\" without radio: the voice of the robot (said at once at 9), the radio unchanged",
+          tts_audio.voice_level() == 9 and tts_audio.radio_volume() == radio_before and texts[-1] == "Volume 9.")
+    tts_audio.save_voice_level(8)
 
     await command("radio")
     sent.clear()
@@ -346,18 +453,74 @@ async def agent_behaviour():
     sent.clear()
     await a.handle_message({"type": "radio_stop"})
     check("\"Stop\" button of the TV page: radio stopped, the page told",
-          not a.radio.on and sent == [{"type": "radio_state", "playing": False}], sent)
+          not a.radio.on and sent == [radio_state(False)], sent)
 
     sent.clear()
     await a.handle_message({"type": "register_ack", "status": "ok"})
     check("connected: TV contacts asked, radio state sent",
-          {"type": "tv_contacts_request"} in sent and {"type": "radio_state", "playing": False} in sent, sent)
+          {"type": "tv_contacts_request"} in sent and radio_state(False) in sent, sent)
 
     a.active_call_id = "c-2"
     sent.clear()
     await a.on_voice_command("radio")
     check("during a call: nothing", sent == [] and not a.radio.on)
+    await a.handle_message({"type": "radio_play", "frequency": "87.8"})
+    check("during a call: no radio from the page either", not a.radio.on and sent == [radio_state(False)], sent)
     a.active_call_id = None
+
+    # --- Radio page of the TV ---
+    sent.clear()
+    await a.handle_message({"type": "radio_request"})
+    check("radio page opened: the stations and the state", sent == [radio_state(False)], sent)
+    sent.clear()
+    said_before = len(texts)
+    tts_audio.save_radio_volume(60)
+    await a.handle_message({"type": "radio_play", "frequency": "101.2"})
+    check("Play on the page: the station plays at once, nothing said, at the volume of the radio (60 %)",
+          a.radio.playing and a.radio.station["name"] == "Radio Test" and len(texts) == said_before
+          and amixer[-1][-1] == "60%" and sent[-1] == radio_state(True, station="Radio Test", frequency="101.2"), sent)
+    tts_audio.save_radio_volume(50)
+    first = started[-1]
+    await a.handle_message({"type": "radio_play", "frequency": "101.2"})
+    check("the same station again: not started again", started[-1] is first and a.radio.playing)
+    await a.handle_message({"type": "radio_play", "frequency": "87.8"})
+    check("another station from the tuner: played, volume kept (50 %)",
+          a.radio.station["name"] == "France Inter" and tts_audio.radio_volume() == 50)
+    await a.handle_message({"type": "radio_volume", "percent": 35})
+    check("slider of the radio page: kept and heard at once", tts_audio.radio_volume() == 35 and amixer[-1][-1] == "35%")
+    count = len(amixer)
+    for bad in (101, -5, "50", None, 12.5, True):
+        await a.handle_message({"type": "radio_volume", "percent": bad})
+    check("strange volumes: nothing changes", tts_audio.radio_volume() == 35 and len(amixer) == count)
+    a.radio.stop()
+    await a.handle_message({"type": "radio_volume", "percent": 45})
+    check("radio off: the volume kept for later, the speaker not touched", tts_audio.radio_volume() == 45 and len(amixer) == count)
+    await a.handle_message({"type": "radio_play", "frequency": "87.8"})
+    sent.clear()
+    for bad in ("99.9", 87.8, None, "<b>"):
+        await a.handle_message({"type": "radio_play", "frequency": bad})
+    check("unknown or bad frequency: nothing changes, the state is sent again",
+          a.radio.station["name"] == "France Inter" and sent == [radio_state(True, station="France Inter", frequency="87.8")] * 4)
+
+    sent.clear()
+    agent.RADIO_LEVEL_EVERY = 0.01
+    a.radio.levels()
+    await a.handle_message({"type": "radio_watch", "on": True})
+    task = a.radio_level_task
+    a.radio.sound_levels.extend([10, 60, 90])
+    await asyncio.sleep(0.05)
+    check("page open (radio_watch): the levels of the sound sent", {"type": "radio_level", "levels": [10, 60, 90]} in sent, sent)
+    await a.handle_message({"type": "radio_watch", "on": True})
+    check("asked again (every minute): still one sender", a.radio_level_task is task)
+    await a.stop_radio()
+    sent.clear()
+    a.radio.sound_levels.extend([50])
+    await asyncio.sleep(0.05)
+    check("radio stopped: no levels sent", not any(m["type"] == "radio_level" for m in sent))
+    await a.handle_message({"type": "radio_watch", "on": False})
+    await asyncio.sleep(0.05)
+    check("page closed: the sender ends", task.done())
+    a.radio_watch_until = 0
 
 
 asyncio.run(agent_behaviour())

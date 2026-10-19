@@ -142,7 +142,15 @@ check "folder copied (not a git clone): version unknown, told that remote update
 check "list of the packages installed kept" 'grep -q "ffmpeg.*chromium" $APP/.apt-packages'
 
 echo "=== 2. Update (run again, custom settings, restart accepted)"
-sed -i -e 's|^MOUSE_DEVICE = None|MOUSE_DEVICE = "/dev/input/event4"|' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' -e 's|^VOICE_VOLUME = 1.5|VOICE_VOLUME = 1.2|' -e 's|^SERVER_URL = "wss://appelermami.fr"|SERVER_URL = "wss://appelermami.fr:8443"|' -e 's|^HDMI_PORT = 3|HDMI_PORT = 2|' -e 's|^NIGHTLY_REBOOT_HOUR = 4|NIGHTLY_REBOOT_HOUR = None|' -e 's|^RINGTONE_PATH = .*|RINGTONE_PATH = str(BASE_DIR / "my-ringtone.wav")|' -e 's|"frequency": 87.8,|"frequency": 88.2,|' -e '/"name": "FIP"/d' $APP/config.py
+sed -i -e 's|^MOUSE_DEVICE = None|MOUSE_DEVICE = "/dev/input/event4"|' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' -e 's|^VOICE_VOLUME = 1.5|VOICE_VOLUME = 1.2|' -e 's|^SERVER_URL = "wss://appelermami.fr"|SERVER_URL = "wss://appelermami.fr:8443"|' -e 's|^HDMI_PORT = 3|HDMI_PORT = 2|' -e 's|^NIGHTLY_REBOOT_HOUR = 4|NIGHTLY_REBOOT_HOUR = None|' -e 's|^RINGTONE_PATH = .*|RINGTONE_PATH = str(BASE_DIR / "my-ringtone.wav")|' $APP/config.py
+# A list of stations of one's own, on several lines
+"$REALPY" - "$(native $APP/config.py)" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+own = 'RADIO_STATIONS = [\n    {"name": "Mine", "frequency": 88.2, "url": "https://example.org/mine.mp3"},\n]'
+open(path, "w", encoding="utf-8", newline="\n").write(text.replace("RADIO_STATIONS = None", own, 1))
+PY
 cp "$APP/ringtone.mp3" "$APP/my-ringtone.mp3"
 printf 'x' >> $APP/main.py
 echo "# key of the first installation" > $T/root/etc/appelermamie/allowed_signers
@@ -153,7 +161,7 @@ check "without --lang: language of the Pi kept by default (es)" 'grep -q "INSTAL
 check "same identity kept" 'grep -q "$ID1" $APP/identity.json && grep -q "Identidad existente conservada: $ID1" $T/out.txt'
 check "update: greeting kept, not asked again" 'grep -q "^GREETING_NAME = \"abuela\"$" $APP/config.py && ! grep -q "Cómo llamar a la persona" $T/out.txt'
 check "update: place of the weather kept, not asked again" 'grep -q "^WEATHER_CITY = \"Clermont-Ferrand\"$" $APP/config.py && grep -q "^WEATHER_COUNTRY = \"France\"$" $APP/config.py && ! grep -q "Ciudad (Intro" $T/out.txt'
-check "radio stations of one's own (several lines) kept, config.py still valid" 'grep -q "\"frequency\": 88.2," $APP/config.py && ! grep -q "\"name\": \"FIP\"" $APP/config.py && [ "$(grep -c "^RADIO_STATIONS = \[" $APP/config.py)" = 1 ] && "$REALPY" -c "import ast,sys; ast.parse(open(sys.argv[1], encoding=\"utf-8\").read())" "$(native $APP/config.py)"'
+check "radio stations of one's own (several lines) kept, config.py still valid" 'grep -q "\"name\": \"Mine\", \"frequency\": 88.2," $APP/config.py && ! grep -q "^RADIO_STATIONS = None" $APP/config.py && ! grep -q "emisoras de París" $T/out.txt && [ "$(grep -c "^RADIO_STATIONS = \[" $APP/config.py)" = 1 ] && "$REALPY" -c "import ast,sys; ast.parse(open(sys.argv[1], encoding=\"utf-8\").read())" "$(native $APP/config.py)"'
 check "custom HDMI_PORT (2) kept" 'grep -q "^HDMI_PORT = 2$" $APP/config.py'
 check "ringtone of one's own: RINGTONE_PATH kept, its .mp3 converted" 'grep -q "^RINGTONE_PATH = str(BASE_DIR / \"my-ringtone.wav\")" $APP/config.py && [ -f $APP/my-ringtone.wav ]'
 check "custom NIGHTLY_REBOOT_HOUR (None) kept" 'grep -q "^NIGHTLY_REBOOT_HOUR = None$" $APP/config.py'
@@ -166,6 +174,21 @@ check "copy of the old config.py kept" 'ls $APP/config.py.bak-* >/dev/null 2>&1 
 check "program files updated" '! grep -q "x$" <(tail -c 2 $APP/main.py)'
 check "restart done (answer \"s\")" 'grep -q "^reboot" $T/calls.log'
 check "installed signing key never replaced by a new version" 'grep -q "key of the first installation" $T/root/etc/appelermamie/allowed_signers'
+
+echo "=== 2b. Update of a Pi with the stations of Paris of before 19/10/2026"
+"$REALPY" - "$(native $APP/config.py)" "$(native $REPO)" <<'PY'
+import re
+import sys
+path, repo = sys.argv[1:3]
+sys.path.insert(0, repo)
+import radio_stations
+lines = "".join(f'    {{"name": "{s["name"]}", "frequency": {s["frequency"]}, "url": "{s["url"]}"}},\n' for s in radio_stations.STATIONS["FR"])
+text = open(path, encoding="utf-8").read()
+text = re.sub(r"^RADIO_STATIONS = \[.*?^\]$", lambda m: "RADIO_STATIONS = [\n" + lines + "]", text, count=1, flags=re.M | re.S)
+open(path, "w", encoding="utf-8", newline="\n").write(text)
+PY
+run '\nn\n' "$T/src/Raspberry_receiver/install.sh"
+check "the former list of the project: replaced by the stations of the country (None), said" 'grep -q "^RADIO_STATIONS = None$" $APP/config.py && ! grep -q "icecast.radiofrance.fr/fip" $APP/config.py && grep -q "emisoras de París de antes" $T/out.txt'
 
 echo "=== 3. Run with sudo (root)"
 fresh

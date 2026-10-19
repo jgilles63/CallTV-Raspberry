@@ -36,6 +36,14 @@ nothing leaves the Raspberry. The recognizer only knows the words of the
 commands (closed grammar): far more reliable and lighter than a free
 dictation, and a word heard alone ("robot", "bonjour") does nothing.
 
+Against the commands that nobody asked (seen on the TV on 19/10/2026: "radio
+robot" with a weak "robot" turned the radio on): the wake word must be sure
+(WAKE_CONFIDENCE) in a command too, and the command must be nearly the whole
+result (MAX_OTHER_WORDS around it: an ordinary sentence gives a lot of
+"[unk]"). What the robot heard and did is written in voice.log (last
+LOG_LINES lines, kept after a restart, unlike the journal of the Pi): only
+the words of the commands, never what is said in the room.
+
 The audio comes from sound_level.py (same microphone stream): the
 recognizer only works while a sound is heard (plus the half second before
 it, so that the start of "robot" is not cut). The model is loaded when the
@@ -91,6 +99,9 @@ STATION_PHRASES = {"fr": ["mets {}", "mets la radio {}", "radio {}", "{}"], "en"
 FREQUENCY_POINTS = {"fr": ["point", "virgule", ""], "en": ["point"], "es": ["punto", "coma", ""]}
 # Words of a contact name kept at most
 MAX_NAME_WORDS = 4
+# What the robot heard and did (application folder), last lines kept
+LOG_FILE_NAME = "voice.log"
+LOG_LINES = 300
 
 FR_UNITS = ["zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix", "onze",
             "douze", "treize", "quatorze", "quinze", "seize", "dix-sept", "dix-huit", "dix-neuf"]
@@ -217,6 +228,9 @@ def grammar(lang, table=None):
     return json.dumps(phrases + [wake, "[unk]"], ensure_ascii=False)
 
 
+# Words heard in the same result around a command, at most ("Robot, mets la
+# radio s'il te plait": "[unk]" words); more: an ordinary sentence
+MAX_OTHER_WORDS = 2
 # Each word of a command must be recognized with at least this confidence
 # (measured on a real Pi, 18/10/2026: "robot" 0.93 to 1.0, "bonjour" 0.51 to
 # 0.58 in a real command; ordinary sentences only gave single words)
@@ -247,14 +261,16 @@ def heard_words(result):
     return [(w.get("word"), w.get("conf", 0)) for w in result.get("result", []) if isinstance(w, dict)]
 
 
-def command_of(result, lang, before=(), listening=False, table=None):
+def command_of(result, lang, before=(), listening=False, table=None, max_others=MAX_OTHER_WORDS):
     """
     Command of a result of Vosk, or None: one of the phrases exactly, with
     the wake word just before or after it ("robot quelle heure", "heure est
     il robot"; never "robot [unk] heure"), every word recognized with enough
-    confidence. before: words heard just before (end of the previous
-    result). listening: "robot" was said just before (the robot is green):
-    the phrase alone is enough, if it is the whole result.
+    confidence, the wake word with a high one (WAKE_CONFIDENCE), at most
+    max_others other words in the result (None: any number, while it
+    rings). before: words heard just before (end of the previous result).
+    listening: "robot" was said just before (the robot is green): the phrase
+    alone is enough, if it is the whole result.
     """
     table = phrase_table(lang) if table is None else table
     wake = wake_word(lang)
@@ -271,10 +287,12 @@ def command_of(result, lang, before=(), listening=False, table=None):
             window = sequence[i:j]
             if len(window) < 2 or any(conf < MIN_CONFIDENCE for _w, conf in window):
                 continue
+            if max_others is not None and len(heard) - (j - max(i, first_new)) > max_others:
+                continue
             said = [w for w, _c in window]
-            if said[0] == wake and " ".join(said[1:]) in table:
+            if said[0] == wake and window[0][1] >= WAKE_CONFIDENCE and " ".join(said[1:]) in table:
                 return table[" ".join(said[1:])]
-            if said[-1] == wake and " ".join(said[:-1]) in table:
+            if said[-1] == wake and window[-1][1] >= WAKE_CONFIDENCE and " ".join(said[:-1]) in table:
                 return table[" ".join(said[:-1])]
     return None
 
@@ -286,6 +304,26 @@ def wake_heard(result, lang):
     """
     heard = heard_words(result)
     return len(heard) == 1 and heard[0][0] == wake_word(lang) and heard[0][1] >= WAKE_CONFIDENCE
+
+
+def words_text(words):
+    """"robot 0.98 radio 0.82" (for the logs)."""
+    return " ".join(f"{w} {c:.2f}" for w, c in words)
+
+
+def log(text):
+    """Line printed in the journal and kept in voice.log (last LOG_LINES lines)."""
+    print(text)
+    path = config.BASE_DIR / LOG_FILE_NAME
+    try:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()[-(LOG_LINES - 1):]
+        except FileNotFoundError:
+            lines = []
+        lines.append(time.strftime("%Y-%m-%d %H:%M:%S ") + text)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except (OSError, ValueError):
+        pass
 
 
 def load_vosk_model(path):
@@ -409,10 +447,13 @@ class VoiceCommands:
         command = command_of(result, self.lang, before, listening, self.table)
         heard = heard_words(result)
         if command:
-            print(f"🗣️ Heard: {' '.join(f'{w} {c:.2f}' for w, c in before + heard)}")
+            log(f"🗣️ Heard: {words_text(before + heard)} -> {command}")
             self.last_words = []
             self.listening_until, self.green_shown = 0.0, False
             return command
+        if any(w == wake_word(self.lang) for w, _c in heard) and not wake_heard(result, self.lang):
+            # "robot" in a sentence that is not a command: kept to understand a mistake
+            log(f"🗣️ Not a command: {words_text(before + heard)}")
         if heard:
             self.last_words, self.last_word_at = (before + heard)[-CARRIED_WORDS:], now
         if heard and listening and not wake_heard(result, self.lang):
@@ -427,7 +468,7 @@ class VoiceCommands:
             self.listening_until = now + LISTEN_SECONDS
             if not self.green_shown:
                 self.green_shown = True
-                print(f"🗣️ \"Robot\" heard ({' '.join(f'{w} {c:.2f}' for w, c in heard)}): the robot listens")
+                log(f"🗣️ \"Robot\" heard ({words_text(heard)}): the robot listens")
                 return LISTENING
         return None
 
@@ -465,7 +506,8 @@ class VoiceCommands:
             return None
         table = {phrase: command for phrase, command in (self.table or phrase_table(self.lang)).items()
                  if command in RINGING_COMMANDS}
-        command = command_of({"result": [{"word": w, "conf": c} for w, c in heard]}, self.lang, table=table)
+        command = command_of({"result": [{"word": w, "conf": c} for w, c in heard]}, self.lang, table=table,
+                             max_others=None)
         if command is None and self.listening:
             # "robot" said before: the phrase anywhere in what is heard (a noise
             # of the room or the end of the ringtone may come after it)
@@ -479,7 +521,7 @@ class VoiceCommands:
                 if command:
                     break
         if command:
-            print(f"🗣️ Heard while it rings: {' '.join(f'{w} {c:.2f}' for w, c in heard)}")
+            log(f"🗣️ Heard while it rings: {words_text(heard)} -> {command}")
             if not final:
                 self.recognizer.Reset()
             self.last_words = []

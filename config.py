@@ -101,25 +101,18 @@ VOICE_REACTION = True
 # microphone). False = no spoken commands.
 VOICE_COMMANDS = True
 
-# --- Radio asked by voice (radio.py) ---
-# Stations: name (said and shown on the TV), FM frequency (to ask for it:
+# --- Radio (radio.py, radio page of the TV) ---
+# None = the stations of the country of the TV (radio_stations.py: France,
+# Spain, United Kingdom, Portugal, Mexico, United States), chosen from
+# WEATHER_COUNTRY (settings page), else from the language. Or one's own
+# list: name (said and shown on the TV), FM frequency (to ask for it:
 # "Robot, radio 105.5"; only a name, the sound comes from the internet) and
-# address of the stream. Frequencies of Paris: change them to those of your
-# town, add or remove stations. Played on the USB speaker.
-RADIO_STATIONS = [
-    {"name": "France Inter", "frequency": 87.8, "url": "https://icecast.radiofrance.fr/franceinter-midfi.mp3"},
-    {"name": "France Musique", "frequency": 91.7, "url": "https://icecast.radiofrance.fr/francemusique-midfi.mp3"},
-    {"name": "France Culture", "frequency": 93.5, "url": "https://icecast.radiofrance.fr/franceculture-midfi.mp3"},
-    {"name": "FIP", "frequency": 105.1, "url": "https://icecast.radiofrance.fr/fip-midfi.mp3"},
-    {"name": "Franceinfo", "frequency": 105.5, "url": "https://icecast.radiofrance.fr/franceinfo-midfi.mp3"},
-    {"name": "RTL", "frequency": 104.3, "url": "http://icecast.rtl.fr/rtl-1-44-128"},
-    {"name": "Europe 1", "frequency": 104.7, "url": "https://stream.europe1.fr/europe1.mp3"},
-    {"name": "Nostalgie", "frequency": 90.4, "url": "https://streaming.nrjaudio.fm/oug7girb92oc"},
-    {"name": "Chérie FM", "frequency": 91.3, "url": "https://cdnradio.streamakaci.com/cheriefm1.mp3"},
-    {"name": "NRJ", "frequency": 100.3, "url": "https://scdn.nrjaudio.fm/adwz2/fr/30001/mp3_128.mp3"},
-    {"name": "RFM", "frequency": 103.9, "url": "https://rfm.lmn.fm/rfm.mp3"},
-    {"name": "Radio Classique", "frequency": 101.1, "url": "http://radioclassique.ice.infomaniak.ch/radioclassique-high.mp3"},
-]
+# address of the stream, for example:
+#   RADIO_STATIONS = [
+#       {"name": "France Inter", "frequency": 87.8, "url": "https://icecast.radiofrance.fr/franceinter-midfi.mp3"},
+#   ]
+# Played on the USB speaker.
+RADIO_STATIONS = None
 
 # --- Resolution of the screen (display_mode.py) ---
 # "1080p" = a TV giving 4K (3840 x 2160) is set to 1920 x 1080, up to 60 Hz:

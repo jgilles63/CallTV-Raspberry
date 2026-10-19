@@ -92,6 +92,20 @@ check("words of the previous result: \"robot\" then \"bonjour\" -> hello",
       v.command_of(result("bonjour"), "fr", before=[("robot", 0.97)]) == "hello")
 check("Spanish: \"robot hola\"", v.command_of(result("robot", "hola"), "es") == "hello")
 check("empty or broken result: nothing", v.command_of({}, "fr") is None and v.command_of({"result": [None, 3]}, "fr") is None)
+# Commands nobody asked (TV of the user, 19/10/2026: "radio 0.82 robot 0.70" turned the radio on)
+unasked = {"result": [{"conf": 0.82, "word": "radio"}, {"conf": 0.70, "word": "robot"}], "text": "radio robot"}
+check("real mistake of the TV (weak \"robot\" 0.70 after \"radio\"): nothing", v.command_of(unasked, "fr") is None)
+check("weak \"robot\" before the command: nothing",
+      v.command_of({"result": [{"word": "robot", "conf": 0.7}, {"word": "bonjour", "conf": 0.9}]}, "fr") is None)
+check("sure \"robot\" (0.8 and more): taken",
+      v.command_of({"result": [{"word": "robot", "conf": 0.8}, {"word": "bonjour", "conf": 0.6}]}, "fr") == "hello")
+check("\"robot quelle heure\" with 2 other words around (s'il te plait): taken",
+      v.command_of(result("[unk]", "robot", "quelle", "heure", "[unk]"), "fr") == "time")
+check("... in a long sentence (3 other words and more): nothing",
+      v.command_of(result("[unk]", "[unk]", "robot", "quelle", "heure", "[unk]"), "fr") is None
+      and v.command_of(result("[unk]", "radio", "robot", "[unk]", "[unk]", "bonjour"), "fr") is None)
+check("while it rings: any number of other words (the ringtone is heard all the time)",
+      v.command_of(result("[unk]", "[unk]", "[unk]", "robot", "bonjour", "[unk]"), "fr", max_others=None) == "hello")
 
 
 # --- Recognizer fed with the frames ---
@@ -182,6 +196,19 @@ check("\"robot\" alone in a result: the robot listens (green), no command yet", 
 rec.partial = result("bonjour")
 check("\"bonjour\" in the next result: hello", voice.frame(frame(61), True) == "hello")
 check("command heard: no longer listening", not voice.listening and not voice.green_shown)
+log_lines = (cfg.BASE_DIR / v.LOG_FILE_NAME).read_text(encoding="utf-8").splitlines()
+check("voice.log: what the robot heard and did (kept after a restart), with the time",
+      log_lines[-1].endswith("Heard: bonjour 0.95 -> hello") and "\"Robot\" heard (robot 0.95)" in log_lines[-2]
+      and log_lines[-1][:4].isdigit(), log_lines[-2:])
+old_base = cfg.BASE_DIR
+cfg.BASE_DIR = Path(tempfile.mkdtemp())
+for n in range(v.LOG_LINES + 20):
+    v.log(f"line {n}")
+log_lines = (cfg.BASE_DIR / v.LOG_FILE_NAME).read_text(encoding="utf-8").splitlines()
+check("voice.log: last LOG_LINES lines only", len(log_lines) == v.LOG_LINES and log_lines[-1].endswith(f"line {v.LOG_LINES + 19}"))
+cfg.BASE_DIR = cfg.BASE_DIR / "missing"
+v.log("folder missing: no crash")
+cfg.BASE_DIR = old_base
 rec.partial = result("robot")
 voice.frame(frame(62), True)
 voice.last_word_at -= 10
@@ -363,7 +390,8 @@ async def agent_behaviour():
         if sent:
             break
         await asyncio.sleep(0.01)
-    check("weather: asked to the server (weather_request)", sent == [{"type": "weather_request"}], sent)
+    check("weather: asked to the server with the hours (what is left of the day)",
+          sent == [{"type": "weather_request", "hours": True}], sent)
     await a.handle_message({"type": "weather", "available": True, "temperature": 16.6, "place": "Madrid",
                             "today": {"icon": "rain", "min": 8, "max": 18, "rain": 70}})
     await a.voice_answer_task
@@ -404,6 +432,69 @@ check("weather (fr): without the forecast of the day, the temperature only", r.w
     {"available": True, "temperature": 20, "place": "Vichy", "today": None}) == "Il fait 20 degrés à Vichy.")
 check("weather: broken answer -> unknown", r.weather_sentence(None) == "Je ne connais pas la météo pour le moment."
       and r.weather_sentence({"available": True}) == "Je ne connais pas la météo pour le moment.")
+
+
+# What is left of the day, hour by hour (ROADMAP 2.22): today 8 to 18 degrees,
+# rain from 16 h, clear at night; tomorrow sunny
+def hours_of(temperatures, icons, rains, night_icon="clear"):
+    return [{"hour": h, "temperature": temperatures(h), "icon": icons(h) if 6 <= h <= 20 else night_icon,
+             "isDay": 7 <= h <= 19, "rain": rains(h)} for h in range(24)]
+
+
+TODAY = {"date": "2026-10-19", "icon": "rain", "min": 8, "max": 18, "rain": 70,
+         "hours": hours_of(lambda h: 8 + min(h, 24 - h) * 10 / 12, lambda h: "rain" if 16 <= h <= 19 else "partly",
+                           lambda h: 70 if 16 <= h <= 19 else 0)}
+TOMORROW = {"date": "2026-10-20", "icon": "clear", "min": 6, "max": 19, "rain": 0,
+            "hours": hours_of(lambda h: 6 + h / 2, lambda h: "clear", lambda h: 0)}
+
+
+def at(hour, days=(TODAY, TOMORROW)):
+    return {"available": True, "temperature": 12, "place": "Madrid", "today": {k: TODAY[k] for k in ("icon", "min", "max", "rain")},
+            "now": f"2026-10-19T{hour:02d}", "days": list(days)}
+
+
+morning = r.weather_sentence(at(9))
+check("9 h: the rest of the day (10 h to 21 h; rain for 4 hours: said), the hour of the first rain, not the morning gone",
+      morning == "Il fait 12 degrés à Madrid. Pour le reste de la journée : de la pluie, entre 10 et 18 degrés. "
+      "Risque de pluie vers 16 heures : 70 pour cent.", morning)
+afternoon = r.weather_sentence(at(17))
+check("17 h: until this evening, rain now (it lasts: the sky said is rain)",
+      afternoon == "Il fait 12 degrés à Madrid. D'ici ce soir : de la pluie, entre 10 et 13 degrés. Risque de pluie vers 18 heures : 70 pour cent.",
+      afternoon)
+evening = r.weather_sentence(at(20))
+check("20 h: tonight (until 5 h tomorrow, \"ciel dégagé\", never \"grand soleil\" at night) and tomorrow",
+      evening == "Il fait 12 degrés à Madrid. Cette nuit : ciel dégagé, entre 6 et 10 degrés. Demain : grand soleil, entre 6 et 19 degrés.",
+      evening)
+check("23 h: tonight from the hours of tomorrow, then tomorrow", r.weather_sentence(at(23)).startswith(
+      "Il fait 12 degrés à Madrid. Cette nuit : ciel dégagé, entre 6 et 8 degrés. Demain"), r.weather_sentence(at(23)))
+night = r.weather_sentence(at(2))
+check("2 h: the rest of the night, then the day to come", night ==
+      "Il fait 12 degrés à Madrid. Cette nuit : ciel dégagé, entre 10 et 12 degrés. Dans la journée : de la pluie, entre 10 et 18 degrés. "
+      "Risque de pluie vers 16 heures : 70 pour cent.", night)
+check("the hour of the place given by the server, not the clock of the Raspberry",
+      r.weather_sentence(at(9), now=day(20, 0)) == morning)
+no_now = dict(at(9))
+del no_now["now"]
+check("... else the clock of the Raspberry", r.weather_sentence(no_now, now=day(9, 30)) == morning)
+check("one temperature only: \"14 degrés\"", r.weather_sentence(at(9, [dict(TODAY, hours=[
+      {"hour": 10, "temperature": 14, "icon": "cloudy", "rain": 0}, {"hour": 11, "temperature": 14.2, "icon": "cloudy", "rain": 0}])]))
+      == "Il fait 12 degrés à Madrid. Pour le reste de la journée : ciel couvert, 14 degrés.")
+check("broken hours: the forecast of the whole day (as before)", r.weather_sentence(at(9, [{"hours": "x"}]))
+      == "Il fait 12 degrés à Madrid. Aujourd'hui : de la pluie, entre 8 et 18 degrés. Risque de pluie : 70 pour cent.")
+check("a single storm hour is enough to say storms (the worst sky)", r.sky_of(
+      [{"icon": "clear"}, {"icon": "clear"}, {"icon": "storm"}, {"icon": "storm"}]) == "des orages"
+      and r.sky_of([{"icon": "partly"}, {"icon": "partly"}, {"icon": "rain"}]) == "quelques nuages")
+cfg.LANGUAGE = "en"
+check("weather (en): until this evening, around 6 PM", r.weather_sentence(at(17)) ==
+      "It is 12 degrees in Madrid. Until this evening: rain, between 10 and 13 degrees. Chance of rain around 6 PM: 70 percent.",
+      r.weather_sentence(at(17)))
+check("weather (en): tonight, clear skies, tomorrow", r.weather_sentence(at(20)) ==
+      "It is 12 degrees in Madrid. Tonight: clear skies, between 6 and 10 degrees. Tomorrow: sunny, between 6 and 19 degrees.", r.weather_sentence(at(20)))
+cfg.LANGUAGE = "es"
+check("weather (es): resto del día, hacia las 16", r.weather_sentence(at(9)) ==
+      "Hace 12 grados en Madrid. Para el resto del día: lluvia, entre 10 y 18 grados. Probabilidad de lluvia hacia las 16: 70 por ciento.",
+      r.weather_sentence(at(9)))
+cfg.LANGUAGE = "fr"
 # "Robot, comment ça va ?": the health report said
 for words_heard, wanted in ((("robot", "comment", "ça", "va"), "health"), (("ça", "va", "robot"), "health"),
                             (("robot", "tu", "vas", "bien"), "health"), (("ça", "va"), None)):
@@ -481,6 +572,11 @@ check("say: sentence generated in the language of the Raspberry and played on th
       tts_audio.say("voice.hello") is True and ("gtts", "Bonjour, je suis Robot ! Comment je peux t'aider ?", "fr") in calls
       and ("aplay", "-q") in calls, calls)
 check("... at the volume said by voice (scale of the ear), not forced to 100 %", ("amixer", "-M") in calls, calls)
+mixed = []
+tts_audio.set_card_volume = lambda card, percent, mapped=False: mixed.append(percent)
+tts_audio.save_radio_volume(20)
+tts_audio.play_wav("x.wav")
+check("voice of the robot at its own volume (8 = 80 %), not the one of the radio (20 %)", mixed == [80], mixed)
 calls.clear()
 tts_audio.say("voice.hello")
 check("said again: from the cache (no new generation)", not any(c[0] == "gtts" for c in calls) and ("aplay", "-q") in calls)
