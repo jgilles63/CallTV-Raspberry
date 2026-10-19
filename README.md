@@ -133,7 +133,7 @@ The camera is **not** handled by Python: `receveur.html` starts it when the call
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.2.8        # the latest version (see "Releases")
+   git checkout v0.2.9        # the latest version (see "Releases")
    ```
    (`sudo apt install -y git` if git is missing.) This folder only holds the downloaded
    project: the script installs the programs into `~/AppelerMamie`.
@@ -249,6 +249,7 @@ their own, without a restart. The server then pins the device secret.
 |---|---|---|
 | `LANGUAGE` | `fr` | Language of the Raspberry (`fr`, `en`, `es`) |
 | `GREETING_NAME` | asked by `install.sh` | How the announcement greets the person called ("grandma", "dad", a first name...); `None` = without greeting |
+| `TV_NAME` | `None` | Name of this TV for the other TVs ("Mamie": shown in their contacts, "Robot, appelle Mamie", announced when this TV calls); changed on the settings page of the TV; `None` = the name of its first owner, else its identifier |
 | `WEATHER_CITY`, `WEATHER_POSTCODE`, `WEATHER_COUNTRY` | asked by `install.sh` | Place of the weather of the TV home screen: town, postal code, country ("France" or "FR"), each one may be `None`. Without a town nor a postal code: no weather. Asked at the first installation (options `--city`, `--postcode`, `--country`), kept by updates; only the place is sent to the weather service (Open-Meteo, through the server). Restart the agent after a change |
 | `SERVER_URL` | `wss://appelermami.fr` | Address of your server |
 | `MOUSE_DEVICE` | `None` (automatic detection) | Only set it to force a specific device (several mice plugged in): stable path from `ls -l /dev/input/by-id/` |

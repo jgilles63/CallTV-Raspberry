@@ -327,7 +327,7 @@ weather_set, weather = sys.argv[6], dict(zip(("WEATHER_CITY", "WEATHER_POSTCODE"
 KEPT = ("SERVER_URL", "UNAUTHORIZED_RETRY_DELAY", "MOUSE_DEVICE", "MOUSE_RETRY_DELAY",
         "HDMI_PORT", "AUDIO_DEVICE", "CALL_AUDIO_OUTPUT", "SCREEN_MODE", "VOICE_REACTION", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
         "MAX_CALLER_NAME_LENGTH", "VOICE_VOLUME", "RINGTONE_VOLUME", "NIGHTLY_REBOOT_HOUR",
-        "GREETING_NAME", "WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY", "VOICE_COMMANDS",
+        "GREETING_NAME", "WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY", "VOICE_COMMANDS", "TV_NAME",
         "RADIO_STATIONS")
 # Settings written on several lines (a list from "[" to the "]" at the start of a line)
 BLOCKS = ("RADIO_STATIONS",)
@@ -422,6 +422,10 @@ if isinstance(tv_settings, dict):
     if not weather_set and any(key in tv_settings for key in weather):
         weather = {key: tv_settings.get(key) or "" for key in weather}
         set_weather()
+    if "TV_NAME" in tv_settings:
+        clean = "".join(c for c in str(tv_settings.get("TV_NAME") or "").strip()[:30] if c.isalnum() or c in " -'.,").strip()
+        line = f'TV_NAME = "{clean}"' if clean else "TV_NAME = None"
+        new = re.sub(r"^TV_NAME *=.*$", line, new, count=1, flags=re.M)
     print("settings=absorbed")
 
 new = re.sub(r"^LANGUAGE *=.*$", f'LANGUAGE = "{lang}"', new, count=1, flags=re.M)

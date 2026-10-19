@@ -23,6 +23,12 @@ LANGUAGE = "fr"
 # Asked by install.sh at the first installation (option --greeting).
 GREETING_NAME = None
 
+# --- Name of this TV for the other TVs (settings page of the TV) ---
+# How the other TVs show this one in their contacts and call it by voice
+# ("Mamie": "Robot, appelle Mamie"), and the name announced when this TV
+# calls. None = the name of its first owner (app), else its identifier.
+TV_NAME = None
+
 # --- Place of the weather of the home screen (TV page) ---
 # Town, postal code and country of the Raspberry, e.g. "Clermont-Ferrand",
 # "63000", "France" (or "FR"). Asked by install.sh at the first installation

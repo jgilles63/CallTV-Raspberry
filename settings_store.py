@@ -15,7 +15,8 @@ identity or anything else (ROADMAP 2.15).
     1 to 10 on the page (0.1 to 1.0);
   - VOICE_VOLUME: voice of the announcement, level 1 to 13 on the page
     (10 = 100 % = 1.5, the volume of origin; 13 = 130 %);
-  - WEATHER_CITY / WEATHER_POSTCODE / WEATHER_COUNTRY: place of the weather.
+  - WEATHER_CITY / WEATHER_POSTCODE / WEATHER_COUNTRY: place of the weather;
+  - TV_NAME: name of this TV for the other TVs ("Mamie"), 30 characters.
 
 Two more volumes, kept by tts_audio.py and not in config.py (validate_volumes):
 the radio (level 0 to 10 on the page = 0 to 100 %) and the voice of the
@@ -37,7 +38,9 @@ VOICE_LEVELS = range(1, 14)
 # Voice of the announcement: level 10 (100 %) = VOICE_VOLUME 1.5
 VOICE_STEP = 0.15
 PLACE_KEYS = ("WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY")
-PLACE_MAX_LENGTH = {"WEATHER_CITY": 60, "WEATHER_POSTCODE": 12, "WEATHER_COUNTRY": 40}
+# Texts of the page cleaned the same way: the place and the name of the TV
+TEXT_KEYS = PLACE_KEYS + ("TV_NAME",)
+PLACE_MAX_LENGTH = {"WEATHER_CITY": 60, "WEATHER_POSTCODE": 12, "WEATHER_COUNTRY": 40, "TV_NAME": 30}
 # Characters kept in a place (same as install.sh)
 PLACE_EXTRA_CHARACTERS = " -'.,"
 
@@ -83,7 +86,7 @@ def validate(values):
     level = values.get("ringtoneVoiceLevel")
     if isinstance(level, int) and not isinstance(level, bool) and level in VOICE_LEVELS:
         clean["VOICE_VOLUME"] = round(level * VOICE_STEP, 2)
-    for key, name in zip(PLACE_KEYS, ("city", "postcode", "country")):
+    for key, name in zip(TEXT_KEYS, ("city", "postcode", "country", "tvName")):
         if name in values and (values[name] is None or isinstance(values[name], str)):
             clean[key] = clean_place(values[name], key)
     return clean
@@ -136,7 +139,7 @@ def validate_saved(data):
     volume = data.get("VOICE_VOLUME")
     if isinstance(volume, (int, float)) and not isinstance(volume, bool) and VOICE_STEP <= volume <= 13 * VOICE_STEP + 0.001:
         valid.add("VOICE_VOLUME")
-    for key in PLACE_KEYS:
+    for key in TEXT_KEYS:
         if key in data and (data[key] is None or (isinstance(data[key], str) and clean_place(data[key], key) == data[key])):
             valid.add(key)
     return valid

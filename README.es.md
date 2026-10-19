@@ -136,7 +136,7 @@ La cámara **no** la gestiona Python: la activa `receveur.html` en el momento de
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.2.8        # la última versión (ver «Releases»)
+   git checkout v0.2.9        # la última versión (ver «Releases»)
    ```
    (`sudo apt install -y git` si falta git.) Esta carpeta solo contiene el proyecto
    descargado: el script instala los programas en `~/AppelerMamie`.
@@ -255,6 +255,7 @@ solos, sin reiniciar. El servidor guarda entonces el secreto del dispositivo.
 |---|---|---|
 | `LANGUAGE` | `fr` | Idioma de la Raspberry (`fr`, `en`, `es`) |
 | `GREETING_NAME` | preguntado por `install.sh` | Cómo el anuncio llama a la persona («abuela», «papá», un nombre…); `None` = sin saludo |
+| `TV_NAME` | `None` | Nombre de esta tele para las otras teles («Mamie»: mostrado en sus contactos, «Robot, llama a Mamie», anunciado cuando esta tele llama); se cambia en la página de ajustes de la tele; `None` = el nombre de su primer propietario, si no su identificador |
 | `WEATHER_CITY`, `WEATHER_POSTCODE`, `WEATHER_COUNTRY` | preguntados por `install.sh` | Lugar del tiempo de la pantalla de inicio de la TV: ciudad, código postal, país («España» o «ES»), cada uno puede valer `None`. Sin ciudad ni código postal: sin tiempo. Preguntados en la primera instalación (opciones `--city`, `--postcode`, `--country`), conservados por las actualizaciones; solo el lugar se envía al servicio del tiempo (Open-Meteo, a través del servidor). Reiniciar el agente tras un cambio |
 | `SERVER_URL` | `wss://appelermami.fr` | Dirección de tu servidor |
 | `MOUSE_DEVICE` | `None` (detección automática) | Solo hay que indicarlo para imponer un dispositivo concreto (varios ratones conectados): ruta estable de `ls -l /dev/input/by-id/` |

@@ -324,7 +324,8 @@ printf '{
   "RINGTONE_VOLUME": 0.5,
   "WEATHER_CITY": "Lyon",
   "WEATHER_POSTCODE": "69001",
-  "WEATHER_COUNTRY": null
+  "WEATHER_COUNTRY": null,
+  "TV_NAME": "Mamie"
 }
 ' > $APP/settings.json
 : > $T/calls.log
@@ -332,6 +333,7 @@ run '' "$T/src/Raspberry_receiver/install.sh" --update
 check "language chosen on the TV kept by the update (en)" 'grep -q "^LANGUAGE = \"en\"" $APP/config.py'
 check "... and the messages of the script in that language" 'grep -q "CALL GRANDMA" $T/out.txt'
 check "ringtone volume and place of the TV written into config.py" 'grep -q "^RINGTONE_VOLUME = 0.5$" $APP/config.py && grep -q "^WEATHER_CITY = \"Lyon\"$" $APP/config.py && grep -q "^WEATHER_POSTCODE = \"69001\"$" $APP/config.py && grep -q "^WEATHER_COUNTRY = None$" $APP/config.py'
+check "name of this TV written into config.py, kept by the next updates" 'grep -q "^TV_NAME = \"Mamie\"$" $APP/config.py'
 check "settings.json removed (one place for the settings), config.py valid and applying a later one" '[ ! -e $APP/settings.json ] && grep -q "settings_store.apply(globals())" $APP/config.py && "$REALPY" -c "import ast,sys; ast.parse(open(sys.argv[1], encoding=\"utf-8\").read())" "$(native $APP/config.py)"'
 printf '{"WEATHER_CITY": "Nice"}' > $APP/settings.json
 : > $T/calls.log

@@ -310,6 +310,8 @@ class TVControlAgent:
             "version": installed_version(),
             # Place of the weather of the home screen (config.py), or None
             "weatherPlace": weather_place(),
+            # Name of this TV for the other TVs (settings page), or None
+            "tvName": getattr(config, "TV_NAME", None),
         }
         await self.send_message(msg)
         print(f"✅ Registration sent: {config.RASPBERRY_ID}")
@@ -1025,6 +1027,7 @@ class TVControlAgent:
             "city": config.WEATHER_CITY or "",
             "postcode": config.WEATHER_POSTCODE or "",
             "country": config.WEATHER_COUNTRY or "",
+            "tvName": getattr(config, "TV_NAME", None) or "",
         }
 
     async def send_settings(self):

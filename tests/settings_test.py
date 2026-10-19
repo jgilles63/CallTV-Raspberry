@@ -74,6 +74,12 @@ check("place cleaned like install.sh (no quote, no ;, no #), cut", cleaned.start
       and not set('";#') & set(cleaned) and len(cleaned) <= 60
       and len(st.validate({"postcode": "1" * 40})["WEATHER_POSTCODE"]) == 12, cleaned)
 check("empty place: None (no weather)", st.validate({"city": "  ", "country": None}) == {"WEATHER_CITY": None, "WEATHER_COUNTRY": None})
+check("name of this TV: cleaned (no quote, no < >), 30 characters, empty -> None (name of the owner)",
+      st.validate({"tvName": " Mamie \"<b>" + "x" * 40})["TV_NAME"] == "Mamie b" + "x" * 20
+      and st.validate({"tvName": "  "}) == {"TV_NAME": None} and st.validate({"tvName": 5}) == {}
+      and st.validate({"tvName": "Señora Pérez"}) == {"TV_NAME": "Señora Pérez"})
+check("name of this TV kept in settings.json (checked again when read)",
+      st.validate_saved({"TV_NAME": "Mamie"}) == {"TV_NAME"} and st.validate_saved({"TV_NAME": "Ma\"mie"}) == set())
 check("not an object: nothing", st.validate("LANGUAGE=en") == {} and st.validate(None) == {})
 check("ringtone volume <-> level", st.ringtone_level(0.2) == 2 and st.ringtone_level(1) == 10 and st.ringtone_level("x") == 2)
 check("voice of the announcement: level 1 to 13, 10 = 100 % = 1.5 (volume of origin), 13 = 130 %",
@@ -174,6 +180,20 @@ check("no internet: False, no crash, old model kept", voice_model.download("fr",
 
 
 # --- Agent: settings page ---
+async def registration(a):
+    """Registration message the agent sends to the server."""
+    captured = []
+    previous = a.send_message
+
+    async def capture(data):
+        captured.append(data)
+
+    a.send_message = capture
+    await a.register_device()
+    a.send_message = previous
+    return captured[-1]
+
+
 async def agent_settings():
     a = agent.TVControlAgent()
     sent = []
@@ -188,7 +208,7 @@ async def agent_settings():
     check("settings asked: current values and the radio stations (not changed there)", sent[-1] == {
         "type": "settings", "values": {"language": "fr", "ringtoneLevel": 2, "ringtoneVoiceLevel": 10,
                                        "radioLevel": 2, "robotVoiceLevel": 8, "city": "Madrid",
-                                       "postcode": "28051", "country": "Espagne"},
+                                       "postcode": "28051", "country": "Espagne", "tvName": ""},
         "stations": [{"name": "France Inter", "frequency": "87.8"}]}, sent[-1])
 
     restarts = []
@@ -208,6 +228,13 @@ async def agent_settings():
     check("place changed: saved, agent restarted (new place sent to the server), server never changed",
           st.load(cfg.BASE_DIR)["WEATHER_CITY"] == "Lyon" and "SERVER_URL" not in st.load(cfg.BASE_DIR)
           and restarts == [True] and sent[-1]["restart"] is True and downloads == [], sent)
+    sent.clear()
+    restarts.clear()
+    await a.apply_settings({"tvName": "Mamie"})
+    check("name of this TV changed: saved, agent restarted (the new name sent to the server)",
+          st.load(cfg.BASE_DIR)["TV_NAME"] == "Mamie" and cfg.TV_NAME == "Mamie" and restarts == [True], sent)
+    check("... given to the server at the registration", (await registration(a))["tvName"] == "Mamie")
+    cfg.TV_NAME = None
     sent.clear()
     restarts.clear()
     await a.apply_settings({"language": "es"})

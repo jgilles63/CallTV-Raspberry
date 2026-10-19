@@ -136,7 +136,7 @@ décroché.
    ```bash
    git clone https://github.com/jgilles63/CallTV-Raspberry.git ~/AppelerMamie-src
    cd ~/AppelerMamie-src
-   git checkout v0.2.8        # la dernière version (voir « Releases »)
+   git checkout v0.2.9        # la dernière version (voir « Releases »)
    ```
    (`sudo apt install -y git` si git manque.) Ce dossier contient seulement le projet
    téléchargé : le script installe les programmes dans `~/AppelerMamie`.
@@ -255,6 +255,7 @@ sans redémarrage. Le serveur retient alors le secret de l'appareil.
 |---|---|---|
 | `LANGUAGE` | `fr` | Langue du Raspberry (`fr`, `en`, `es`) |
 | `GREETING_NAME` | demandé par `install.sh` | Comment l'annonce appelle la personne (« mamie », « papa », un prénom…) ; `None` = sans salutation |
+| `TV_NAME` | `None` | Nom de cette TV pour les autres TV (« Mamie » : montré dans leurs contacts, « Robot, appelle Mamie », annoncé quand cette TV appelle) ; modifiable dans la page Réglages de la TV ; `None` = le nom de son premier propriétaire, sinon son identifiant |
 | `WEATHER_CITY`, `WEATHER_POSTCODE`, `WEATHER_COUNTRY` | demandés par `install.sh` | Lieu de la météo de l'écran d'accueil de la TV : ville, code postal, pays (« France » ou « FR »), chacun peut valoir `None`. Sans ville ni code postal : pas de météo. Demandés à la première installation (options `--city`, `--postcode`, `--country`), gardés par les mises à jour ; seul le lieu est envoyé au service météo (Open-Meteo, par le serveur). Redémarrer l'agent après un changement |
 | `SERVER_URL` | `wss://appelermami.fr` | Adresse de votre serveur |
 | `MOUSE_DEVICE` | `None` (détection automatique) | À renseigner seulement pour imposer un appareil précis (plusieurs souris branchées) : chemin stable de `ls -l /dev/input/by-id/` |
