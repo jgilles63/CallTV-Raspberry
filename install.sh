@@ -326,7 +326,8 @@ new_path, old_path, lang, greeting_set, greeting = sys.argv[1:6]
 weather_set, weather = sys.argv[6], dict(zip(("WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY"), sys.argv[7:10]))
 KEPT = ("SERVER_URL", "UNAUTHORIZED_RETRY_DELAY", "MOUSE_DEVICE", "MOUSE_RETRY_DELAY",
         "HDMI_PORT", "AUDIO_DEVICE", "CALL_AUDIO_OUTPUT", "SCREEN_MODE", "VOICE_REACTION", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
-        "MAX_CALLER_NAME_LENGTH", "VOICE_VOLUME", "RINGTONE_VOLUME", "NIGHTLY_REBOOT_HOUR",
+        "MAX_CALLER_NAME_LENGTH", "VOICE_VOLUME", "RINGTONE_VOLUME", "QUIET_START_HOUR", "QUIET_END_HOUR",
+        "NIGHTLY_REBOOT_HOUR",
         "GREETING_NAME", "WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY", "VOICE_COMMANDS", "TV_NAME",
         "RADIO_STATIONS")
 # Settings written on several lines (a list from "[" to the "]" at the start of a line)
@@ -419,6 +420,10 @@ if isinstance(tv_settings, dict):
     volume = tv_settings.get("VOICE_VOLUME")
     if isinstance(volume, (int, float)) and not isinstance(volume, bool) and 0.15 <= volume <= 1.96:
         new = re.sub(r"^VOICE_VOLUME *=.*$", f"VOICE_VOLUME = {round(volume, 2)}", new, count=1, flags=re.M)
+    for key in ("QUIET_START_HOUR", "QUIET_END_HOUR"):
+        hour = tv_settings.get(key)
+        if isinstance(hour, int) and not isinstance(hour, bool) and 0 <= hour <= 23:
+            new = re.sub(rf"^{key} *=.*$", f"{key} = {hour}", new, count=1, flags=re.M)
     if not weather_set and any(key in tv_settings for key in weather):
         weather = {key: tv_settings.get(key) or "" for key in weather}
         set_weather()

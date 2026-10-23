@@ -155,6 +155,14 @@ MAX_CALLER_NAME_LENGTH = 30
 VOICE_VOLUME = 1.5
 RINGTONE_VOLUME = 0.2
 
+# --- Quiet hours: no ringtone (neither music nor announcement) from
+# QUIET_START_HOUR to QUIET_END_HOUR (0 to 23, local time of the Raspberry,
+# over midnight if the start is after the end). A call is still shown on the
+# TV page and answered with the button. Same hour twice = always rings.
+# (settings page of the TV)
+QUIET_START_HOUR = 22
+QUIET_END_HOUR = 8
+
 # --- Device identity, filled at startup by identity.load_identity() ---
 # NB: these two variables are "globals" shared between modules.
 # They are stored here (config module) so they are reachable everywhere
@@ -166,7 +174,8 @@ DEVICE_SECRET = None
 # --- Settings changed on the TV (settings page, settings_store.py) ---
 # settings.json, written by the agent when "Apply" is confirmed on the TV,
 # takes precedence over the values above for LANGUAGE, RINGTONE_VOLUME,
-# VOICE_VOLUME and the place of the weather. install.sh writes them back here and removes it.
+# VOICE_VOLUME, the quiet hours, the name of the TV and the place of the
+# weather. install.sh writes them back here and removes it.
 try:
     import settings_store as _settings_store
     _settings_store.apply(globals())

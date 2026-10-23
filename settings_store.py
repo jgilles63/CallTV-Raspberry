@@ -15,6 +15,8 @@ identity or anything else (ROADMAP 2.15).
     1 to 10 on the page (0.1 to 1.0);
   - VOICE_VOLUME: voice of the announcement, level 1 to 13 on the page
     (10 = 100 % = 1.5, the volume of origin; 13 = 130 %);
+  - QUIET_START_HOUR / QUIET_END_HOUR: no ringtone between these hours
+    (0 to 23, in_quiet_hours);
   - WEATHER_CITY / WEATHER_POSTCODE / WEATHER_COUNTRY: place of the weather;
   - TV_NAME: name of this TV for the other TVs ("Mamie"), 30 characters.
 
@@ -37,6 +39,9 @@ RINGTONE_LEVELS = range(1, 11)
 VOICE_LEVELS = range(1, 14)
 # Voice of the announcement: level 10 (100 %) = VOICE_VOLUME 1.5
 VOICE_STEP = 0.15
+HOURS = range(0, 24)
+# Quiet hours: [config name, name on the page]
+QUIET_KEYS = (("QUIET_START_HOUR", "quietStart"), ("QUIET_END_HOUR", "quietEnd"))
 PLACE_KEYS = ("WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY")
 # Texts of the page cleaned the same way: the place and the name of the TV
 TEXT_KEYS = PLACE_KEYS + ("TV_NAME",)
@@ -69,11 +74,27 @@ def voice_level(volume):
         return 10
 
 
+def in_quiet_hours(hour, start, end):
+    """
+    True if the hour (0 to 23) is in the quiet hours, from start (included)
+    to end (excluded), over midnight if start > end; start == end: never.
+    """
+    if start == end:
+        return False
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
+
+def is_hour(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value in HOURS
+
+
 def validate(values):
     """
-    Settings sent by the page ({"language", "ringtoneLevel", "city",
-    "postcode", "country"}, each one optional) -> {config name: value} of the
-    valid ones only; anything else is ignored.
+    Settings sent by the page ({"language", "ringtoneLevel", "quietStart",
+    "city", "postcode", "country"...}, each one optional) -> {config name:
+    value} of the valid ones only; anything else is ignored.
     """
     if not isinstance(values, dict):
         return {}
@@ -86,6 +107,9 @@ def validate(values):
     level = values.get("ringtoneVoiceLevel")
     if isinstance(level, int) and not isinstance(level, bool) and level in VOICE_LEVELS:
         clean["VOICE_VOLUME"] = round(level * VOICE_STEP, 2)
+    for key, name in QUIET_KEYS:
+        if is_hour(values.get(name)):
+            clean[key] = values[name]
     for key, name in zip(TEXT_KEYS, ("city", "postcode", "country", "tvName")):
         if name in values and (values[name] is None or isinstance(values[name], str)):
             clean[key] = clean_place(values[name], key)
@@ -139,6 +163,9 @@ def validate_saved(data):
     volume = data.get("VOICE_VOLUME")
     if isinstance(volume, (int, float)) and not isinstance(volume, bool) and VOICE_STEP <= volume <= 13 * VOICE_STEP + 0.001:
         valid.add("VOICE_VOLUME")
+    for key, _name in QUIET_KEYS:
+        if is_hour(data.get(key)):
+            valid.add(key)
     for key in TEXT_KEYS:
         if key in data and (data[key] is None or (isinstance(data[key], str) and clean_place(data[key], key) == data[key])):
             valid.add(key)

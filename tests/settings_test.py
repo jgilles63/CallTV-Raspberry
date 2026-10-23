@@ -86,6 +86,15 @@ check("voice of the announcement: level 1 to 13, 10 = 100 % = 1.5 (volume of ori
       st.validate({"ringtoneVoiceLevel": 10}) == {"VOICE_VOLUME": 1.5} and st.validate({"ringtoneVoiceLevel": 13}) == {"VOICE_VOLUME": 1.95}
       and st.validate({"ringtoneVoiceLevel": 1}) == {"VOICE_VOLUME": 0.15} and st.validate({"ringtoneVoiceLevel": 14}) == {}
       and st.voice_level(1.5) == 10 and st.voice_level(1.95) == 13 and st.voice_level(9) == 13 and st.voice_level(None) == 10)
+check("quiet hours: hours 0 to 23 only (not text, not true, not 24)",
+      st.validate({"quietStart": 22, "quietEnd": 0}) == {"QUIET_START_HOUR": 22, "QUIET_END_HOUR": 0}
+      and st.validate({"quietStart": 24, "quietEnd": "8"}) == {} and st.validate({"quietStart": True, "quietEnd": -1}) == {}
+      and st.validate_saved({"QUIET_START_HOUR": 23, "QUIET_END_HOUR": 7.5}) == {"QUIET_START_HOUR"})
+check("quiet hours over midnight (22 h to 8 h): 22 h to 7 h 59 silent, 8 h to 21 h 59 rings",
+      all(st.in_quiet_hours(h, 22, 8) for h in (22, 23, 0, 3, 7)) and not any(st.in_quiet_hours(h, 22, 8) for h in (8, 12, 21)))
+check("quiet hours in the day (13 h to 15 h) and same hour twice (never silent)",
+      st.in_quiet_hours(13, 13, 15) and st.in_quiet_hours(14, 13, 15) and not st.in_quiet_hours(15, 13, 15)
+      and not st.in_quiet_hours(12, 13, 15) and not any(st.in_quiet_hours(h, 7, 7) for h in range(24)))
 
 base = Path(tempfile.mkdtemp())
 check("no file: nothing", st.load(base) == {})
@@ -207,7 +216,7 @@ async def agent_settings():
     await a.handle_message({"type": "settings_request"})
     check("settings asked: current values and the radio stations (not changed there)", sent[-1] == {
         "type": "settings", "values": {"language": "fr", "ringtoneLevel": 2, "ringtoneVoiceLevel": 10,
-                                       "radioLevel": 2, "robotVoiceLevel": 8, "city": "Madrid",
+                                       "radioLevel": 2, "robotVoiceLevel": 8, "quietStart": 22, "quietEnd": 8, "city": "Madrid",
                                        "postcode": "28051", "country": "Espagne", "tvName": ""},
         "stations": [{"name": "France Inter", "frequency": "87.8"}]}, sent[-1])
 
@@ -223,6 +232,11 @@ async def agent_settings():
           cfg.RINGTONE_VOLUME == 0.5 and cfg.VOICE_VOLUME == 1.8 and st.load(cfg.BASE_DIR) == {"RINGTONE_VOLUME": 0.5, "VOICE_VOLUME": 1.8}
           and restarts == []
           and sent == [{"type": "settings_applied", "ok": True, "restart": False, "language": "fr", "voiceModel": True}], sent)
+    sent.clear()
+    await a.apply_settings({"quietStart": 21, "quietEnd": 7})
+    check("quiet hours changed: saved, used at once, no restart",
+          cfg.QUIET_START_HOUR == 21 and cfg.QUIET_END_HOUR == 7 and st.load(cfg.BASE_DIR)["QUIET_START_HOUR"] == 21
+          and restarts == [] and sent[-1]["restart"] is False and a.current_settings()["quietEnd"] == 7, sent)
     sent.clear()
     await a.apply_settings({"city": "Lyon", "postcode": "69001", "country": "France", "SERVER_URL": "wss://evil"})
     check("place changed: saved, agent restarted (new place sent to the server), server never changed",
@@ -329,6 +343,56 @@ async def agent_ringing():
 
 
 asyncio.run(agent_ringing())
+
+
+# --- Quiet hours: a call shown on the TV without ringtone ---
+async def agent_quiet_hours():
+    a = agent.TVControlAgent()
+    sent, played = [], []
+
+    async def capture(data):
+        sent.append(data)
+
+    a.send_message = capture
+    a.registered = True
+    a.loop = asyncio.get_running_loop()
+    a.alert_sound = types.SimpleNamespace(play=lambda name=None: played.append(name), stop=lambda: None)
+    real_datetime = agent.datetime
+    cfg.QUIET_START_HOUR, cfg.QUIET_END_HOUR = 22, 8
+
+    async def call_at(hour, call_id):
+        agent.datetime = types.SimpleNamespace(datetime=types.SimpleNamespace(now=lambda: types.SimpleNamespace(hour=hour)))
+        sent.clear()
+        played.clear()
+        await a.handle_message({"type": "incoming_call", "callId": call_id, "callerName": "Paul"})
+        for _ in range(50):
+            if any(m["type"] == "sound_started" for m in sent):
+                break
+            await asyncio.sleep(0.02)
+        if a.call_timeout_task:
+            a.call_timeout_task.cancel()
+        a.call_window, a.current_call_id = False, None
+
+    try:
+        await call_at(23, "night-1")
+        check("call at 23 h (quiet hours 22 h to 8 h): no ringtone nor announcement, but shown and timed as usual",
+              played == [] and {"type": "sound_started", "callId": "night-1"} in sent, (played, sent))
+        await call_at(7, "night-2")
+        check("call at 7 h: still silent", played == [])
+        await call_at(8, "day-1")
+        check("call at 8 h: the ringtone and the announcement as usual",
+              played == ["Paul"] and {"type": "sound_started", "callId": "day-1"} in sent, (played, sent))
+        cfg.QUIET_START_HOUR = cfg.QUIET_END_HOUR = 8
+        await call_at(23, "same-hour")
+        check("same hour twice: it always rings", played == ["Paul"])
+        del cfg.QUIET_START_HOUR, cfg.QUIET_END_HOUR
+        await call_at(23, "older-config")
+        check("config.py without the quiet hours (older one): 22 h to 8 h", played == [])
+    finally:
+        agent.datetime = real_datetime
+
+
+asyncio.run(agent_quiet_hours())
 
 
 # --- While it rings: partial results read (the ringtone never stops) ---

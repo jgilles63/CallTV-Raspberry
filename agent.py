@@ -25,8 +25,10 @@ Main agent:
   slider sets the volume of the radio at once; while the page is open
   (radio_watch), the level of the sound is sent every second (radio_level,
   wave drawn on the page);
+- quiet hours (QUIET_START_HOUR to QUIET_END_HOUR): a call is shown on the
+  TV page and can be answered, without ringtone nor announcement;
 - settings page of the TV (settings_request / settings_apply): language,
-  ringtone volume, place of the weather saved in settings.json
+  ringtone volume, quiet hours, place of the weather saved in settings.json
   (settings_store.py), speech model of a new language downloaded
   (voice_model.py), then the agent restarts itself if needed;
 - calendar of the TV (calendar_request / calendar_save / calendar_delete):
@@ -528,9 +530,13 @@ class TVControlAgent:
         print(f"\n{'=' * 50}")
         print(f"📞 INCOMING CALL from '{caller_name}' (callId={call_id})")
         print(f"{'=' * 50}")
+        quiet = self.quiet_hours_now()
+        if quiet:
+            print("🌙 Quiet hours: call shown on the TV without sound")
 
         def start_sound():
-            self.alert_sound.play(caller_name)
+            if not quiet:
+                self.alert_sound.play(caller_name)
 
             # The call may have been cancelled or accepted while ringing.
             if not self.call_window or self.current_call_id != call_id:
@@ -551,6 +557,14 @@ class TVControlAgent:
                 )
 
         threading.Thread(target=start_sound, daemon=True).start()
+
+    def quiet_hours_now(self):
+        """True during the quiet hours of config.py / the settings page (local time)."""
+        return settings_store.in_quiet_hours(
+            datetime.datetime.now().hour,
+            getattr(config, "QUIET_START_HOUR", 22),
+            getattr(config, "QUIET_END_HOUR", 8),
+        )
 
     async def send_sound_started(self, call_id):
         """Tells the server that the ringtone has started."""
@@ -1024,6 +1038,8 @@ class TVControlAgent:
             "ringtoneVoiceLevel": settings_store.voice_level(config.VOICE_VOLUME),
             "radioLevel": round(tts_audio.radio_volume() / 10),
             "robotVoiceLevel": tts_audio.voice_level(),
+            "quietStart": getattr(config, "QUIET_START_HOUR", 22),
+            "quietEnd": getattr(config, "QUIET_END_HOUR", 8),
             "city": config.WEATHER_CITY or "",
             "postcode": config.WEATHER_POSTCODE or "",
             "country": config.WEATHER_COUNTRY or "",
@@ -1060,7 +1076,8 @@ class TVControlAgent:
         if "LANGUAGE" in changes:
             await self.send_message({"type": "settings_progress", "step": "voiceModel"})
             voice_ready = await asyncio.to_thread(voice_model.download, changes["LANGUAGE"])
-        restart = any(key not in ("RINGTONE_VOLUME", "VOICE_VOLUME") for key in changes)
+        restart = any(key not in ("RINGTONE_VOLUME", "VOICE_VOLUME", "QUIET_START_HOUR", "QUIET_END_HOUR")
+                      for key in changes)
         for key, value in changes.items():
             setattr(config, key, value)
         await self.send_message({"type": "settings_applied", "ok": True, "restart": restart,

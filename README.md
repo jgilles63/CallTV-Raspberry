@@ -250,6 +250,7 @@ their own, without a restart. The server then pins the device secret.
 | `LANGUAGE` | `fr` | Language of the Raspberry (`fr`, `en`, `es`) |
 | `GREETING_NAME` | asked by `install.sh` | How the announcement greets the person called ("grandma", "dad", a first name...); `None` = without greeting |
 | `TV_NAME` | `None` | Name of this TV for the other TVs ("Mamie": shown in their contacts, "Robot, appelle Mamie", announced when this TV calls); changed on the settings page of the TV; `None` = the name of its first owner, else its identifier |
+| `QUIET_START_HOUR` / `QUIET_END_HOUR` | `22` / `8` | **Quiet hours**: from / until these hours (0 to 23, local time, over midnight), a call is shown on the TV page and answered with the button, without ringtone nor announcement; same hour twice = always rings; changed on the settings page of the TV |
 | `WEATHER_CITY`, `WEATHER_POSTCODE`, `WEATHER_COUNTRY` | asked by `install.sh` | Place of the weather of the TV home screen: town, postal code, country ("France" or "FR"), each one may be `None`. Without a town nor a postal code: no weather. Asked at the first installation (options `--city`, `--postcode`, `--country`), kept by updates; only the place is sent to the weather service (Open-Meteo, through the server). Restart the agent after a change |
 | `SERVER_URL` | `wss://appelermami.fr` | Address of your server |
 | `MOUSE_DEVICE` | `None` (automatic detection) | Only set it to force a specific device (several mice plugged in): stable path from `ls -l /dev/input/by-id/` |
