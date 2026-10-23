@@ -102,13 +102,15 @@ ELD_MONITOR = "monitor_name\t\tKA242Y\nconnection_type\t\tHDMI\neld_version\t\t[
 ELD_EMPTY = "monitor_name\t\t\nconnection_type\t\tHDMI\neld_version\t\t[0x0] reserved\n"
 
 
-def asound(card0_eld):
-    """Fake /proc/asound: card0 = HDMI 0 (the screen), card1 = HDMI 1 (nothing plugged)."""
+def asound(card0_eld, card1_eld=ELD_EMPTY):
+    """Fake /proc/asound: card0 = HDMI 0 (the TV), card1 = HDMI 1 (second screen, nothing plugged by default)."""
     root = tempfile.mkdtemp()
-    for card, text in (("0", card0_eld), ("1", ELD_EMPTY)):
+    for card, text in (("0", card0_eld), ("1", card1_eld)):
         os.makedirs(os.path.join(root, f"card{card}"))
         with open(os.path.join(root, f"card{card}", "eld#0"), "w", encoding="utf-8") as f:
             f.write(text)
+        with open(os.path.join(root, f"card{card}", "id"), "w", encoding="utf-8") as f:
+            f.write(f"vc4hdmi{card}\n")
     return os.path.join(root, "card*", "eld#*")
 
 
@@ -122,6 +124,32 @@ def route(objects, eld, tv_present, mode="auto", reachable=True):
 
 
 call_audio.HDMI_ATTEMPTS = 3
+
+# --- Second screen on HDMI 1 (PLAN_SECOND_ECRAN.md): never its sound ---
+import display_mode  # noqa: E402
+display_mode.second_screen = lambda: (1024, 600)
+call_audio.ELD_GLOB = asound(ELD_TV, ELD_MONITOR)
+check("TV + second screen with sound: only the card of the TV (vc4hdmi0)", call_audio.hdmi_cards_with_sound() == ["0"],
+      call_audio.hdmi_cards_with_sound())
+display_mode.second_screen = lambda: None
+call_audio.ELD_GLOB = asound(ELD_EMPTY, ELD_MONITOR)
+check("one screen on HDMI 1 only (no second screen): its sound used as before", call_audio.hdmi_cards_with_sound() == ["1"])
+display_mode.second_screen = lambda: (1024, 600)
+check("second screen plugged, TV still waking up (no sound yet): never the second screen, nothing yet (review of 23/10/2026)",
+      call_audio.hdmi_cards_with_sound() == [], call_audio.hdmi_cards_with_sound())
+call_audio.ELD_GLOB = asound(ELD_TV, ELD_MONITOR)
+check("second screen plugged, TV awake: the TV", call_audio.hdmi_cards_with_sound() == ["0"])
+display_mode.second_screen = lambda: None
+call_audio.ELD_GLOB = asound(ELD_TV)
+check("TV alone: as before", call_audio.hdmi_cards_with_sound() == ["0"])
+pw = FakePipeWire(tv_pi_after_boot() + [copy.deepcopy(HDMI)], True)
+call_audio.run = pw.run
+call_audio.ELD_GLOB = asound(ELD_TV, ELD_MONITOR)
+check("tv_hdmi_as_default (ringtone without USB speaker): HDMI of the TV made the default output",
+      call_audio.tv_hdmi_as_default() is True and pw.defaults() == ["84"], pw.commands)
+pw = FakePipeWire([], False)
+call_audio.run = pw.run
+check("tv_hdmi_as_default without PipeWire: False, no crash", call_audio.tv_hdmi_as_default() is False)
 call_audio.time.sleep = lambda s: None
 
 # --- The TV of the real Pi: HDMI output left "off" at boot ---

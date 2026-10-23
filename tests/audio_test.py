@@ -132,6 +132,21 @@ played, mixer = ring()
 check("no USB speaker: ringtone on the default output (HDMI)", played == ["default"], played)
 check("no volume setting on the default output", mixer == [], mixer)
 
+# 4b. No USB speaker and a second screen on HDMI-A-2 (PLAN_SECOND_ECRAN.md):
+# the TV is made the default output first, never the second screen
+import call_audio  # noqa: E402
+import display_mode  # noqa: E402
+tv_defaults = []
+call_audio.tv_hdmi_as_default = lambda: tv_defaults.append(True) or True
+display_mode.second_screen = lambda: (1024, 600)
+played, _ = ring()
+check("no USB speaker + second screen: TV made the default output, then the default output",
+      played == ["default"] and tv_defaults == [True], (played, tv_defaults))
+display_mode.second_screen = lambda: None
+tv_defaults.clear()
+played, _ = ring()
+check("no USB speaker, TV alone: default output as before", played == ["default"] and tv_defaults == [], tv_defaults)
+
 # 5. Speaker plugged back in between two calls
 set_cards(WITH_USB)
 played, _ = ring()

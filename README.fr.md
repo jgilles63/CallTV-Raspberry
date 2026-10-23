@@ -2,6 +2,8 @@
 
 [English](README.md) | **Français** | [Español](README.es.md)
 
+Ce qui a changé à chaque version : [CHANGELOG.md](CHANGELOG.md) (en anglais).
+
 Le Raspberry Pi est branché sur la télévision de la personne appelée. Il fait tourner
 **deux programmes** qui se connectent au serveur avec la même identité :
 
@@ -263,6 +265,7 @@ sans redémarrage. Le serveur retient alors le secret de l'appareil.
 | `AUDIO_DEVICE` | `None` (détection automatique) | Enceinte de la sonnerie : la première enceinte USB trouvée. À renseigner seulement pour imposer une carte précise (nom entre crochets dans `aplay -l`) |
 | `CALL_AUDIO_OUTPUT` | `"auto"` | Sortie du son de l'appel : la TV (HDMI) si une TV répond en HDMI-CEC et accepte le son, sinon l'enceinte USB. `"hdmi"` ou `"usb"` pour l'imposer |
 | `SCREEN_MODE` | `"1080p"` | Résolution de l'écran : une TV qui donne la 4K passe en 1920 × 1080, jusqu'à 60 Hz (appels plus fluides). `None` laisse l'écran comme la TV le veut |
+| `SECOND_SCREEN` | `"auto"` | **2e écran** (écran tactile à côté de la TV, sur le 2e micro-HDMI, HDMI-A-2 ; la TV est toujours sur celui côté alimentation) : il montre la page tactile (`ecran.html`), synchronisée avec la page TV ; branché ou débranché, le kiosque rouvre ses fenêtres (hors appel). `False` = jamais. Pi 4 ou Pi 5 (Pi 5 non testé) ; avec un Pi 4 de 2 Go, les appels saccadent (mesuré le 23/10/2026) : Pi de 4 Go et ventilateur conseillés |
 | `VOICE_REACTION` | `True` | Hors appel, le volume du micro est mesuré pour que le robot de la page TV bouge quand quelqu'un parle (rien n'est enregistré ni envoyé). `False` = micro jamais utilisé hors appel |
 | `VOICE_COMMANDS` | `True` | Commandes vocales au robot (« Robot bonjour », heure, météo, radio, volume, appel), reconnues sur le Raspberry (rien n'est envoyé), jamais pendant un appel ; nécessite `VOICE_REACTION`. `False` = aucune |
 | `RADIO_STATIONS` | `None` (stations du pays) | Radio : `None` = les stations du pays de la télé (`radio_stations.py` : France, Espagne, Royaume-Uni, Portugal, Mexique, États-Unis ; pays des Réglages, sinon la langue) ; ou une liste à soi : nom, fréquence FM (seulement pour la demander) et adresse du flux de chaque station ; gardé à la mise à jour (l'ancienne liste de Paris du projet laisse la place aux stations du pays). Le volume dit à la voix est gardé dans `radio_volume.txt` pour la radio (0 à 100 %, 20 % au départ ; barre de la page Radio, page Réglages, « Robot, volume 5 » pendant l'écoute = 50 %) et dans `voice_volume.txt` pour la voix du robot (niveau 1 à 10, 8 au départ ; page Réglages, « Robot, volume 5 » quand la radio est éteinte), la dernière station dans `radio_station.txt` |

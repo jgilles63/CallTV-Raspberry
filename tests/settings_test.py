@@ -426,7 +426,7 @@ voice.is_ringing = lambda: ringing["on"]
 voice.start()
 rec = voice.recognizer
 check("confidence of the partial words asked", rec.partial_words is True)
-rec.partial = [("es", 0.6), ("julien", 1.0), ("llama", 0.9)]
+rec.partial = [("es", 0.6), ("paul", 1.0), ("llama", 0.9)]
 check("announcement of the ringtone heard: nothing", voice.frame(SILENCE, True) is None)
 rec.partial = [("temps", 0.45), ("robot", 0.98)]
 check("\"robot\" (sure) in the partial result: green at once (ringtone turned down)", voice.frame(SILENCE, True) == v.LISTENING)
@@ -453,7 +453,7 @@ rec.partial = [("robot", 0.98), ("[unk]", 1.0)]
 voice.listening_until = 0.0
 check("green while it rings, nothing asked: off when the time is over (the sound never stops)",
       voice.frame(SILENCE, True) == v.LISTENING_OFF and not voice.green_shown)
-rec.final_words = [("es", 0.6), ("julien", 1.0), ("robot", 1.0), ("contesta", 0.8), ("[unk]", 1.0)]
+rec.final_words = [("es", 0.6), ("paul", 1.0), ("robot", 1.0), ("contesta", 0.8), ("[unk]", 1.0)]
 voice.lang = "es"
 voice.table = v.phrase_table("es")
 check("final result while it rings, noise of the ringtone around (Spanish): \"robot contesta\" found in it", voice._ringing_check(rec.final_words, final=True) == "answer")

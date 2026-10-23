@@ -126,6 +126,12 @@ RADIO_STATIONS = None
 # pixels or less are never changed. None = left as the TV wants it.
 SCREEN_MODE = "1080p"
 
+# --- Second screen (touch screen next to the TV, PLAN_SECOND_ECRAN.md) ---
+# The TV is always on the micro-HDMI next to the power socket (HDMI-A-1).
+# "auto" = a screen on the other micro-HDMI (HDMI-A-2) shows the touch page,
+# kept in step with the TV page; False = never (one screen: no change).
+SECOND_SCREEN = "auto"
+
 # --- Nightly restart of the Raspberry (self-repair, selfheal.py) ---
 # Hour (0 to 23, local time) at which the Raspberry restarts every night,
 # quietly (the TV is not turned on), never during a call. None = never.

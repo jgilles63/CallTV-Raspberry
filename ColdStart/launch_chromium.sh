@@ -50,6 +50,20 @@ DISPLAY=:0 chromium \
   --disable-extensions \
   --disable-sync \
   --metrics-recording-only \
-  "https://${SERVER_HOST}/receveur.html?id=${DEVICE_ID}&lang=${LANGUAGE}#secret=${DEVICE_SECRET}"
+  "https://${SERVER_HOST}/receveur.html?id=${DEVICE_ID}&lang=${LANGUAGE}#secret=${DEVICE_SECRET}" &
+KIOSK=$!
 
+# Second screen on the other micro-HDMI (display_mode.py --second): the touch
+# page opens as an "app" window of the same Chromium (same profile: the two
+# pages talk through BroadcastChannel). Its window is named after its address,
+# so the labwc rule written by install.sh moves it to HDMI-A-2; the kiosk
+# makes it fullscreen. Never the secret: the touch page does not connect to
+# the server, the TV page does everything.
+if (cd "$APP_DIR" && timeout 15 python3 display_mode.py --second) >/dev/null 2>&1; then
+  sleep 5
+  DISPLAY=:0 chromium --app="https://${SERVER_HOST}/ecran.html?id=${DEVICE_ID}&lang=${LANGUAGE}" >/dev/null 2>&1 || true
+fi
+
+# The service lives as long as the kiosk Chromium (Restart=always)
+wait "$KIOSK"
 exit 0

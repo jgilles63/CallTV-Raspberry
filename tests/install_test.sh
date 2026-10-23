@@ -122,6 +122,10 @@ check "Chromium service generated, no YOUR_USER left" '! grep -q YOUR_USER $T/ro
 check "services enabled then restarted (no reboot asked)" 'grep -q "systemctl enable tv-control.service chromium-autolaunch.service" $T/calls.log && grep -q "systemctl restart" $T/calls.log && ! grep -q "^reboot" $T/calls.log'
 check "Chromium camera/microphone policy: production + test server (:8443), valid JSON" '"$REALPY" -c "import json,sys; d=json.load(open(sys.argv[1])); u=[\"https://appelermami.fr\",\"https://appelermami.fr:8443\"]; sys.exit(0 if d[\"VideoCaptureAllowedUrls\"]==u and d[\"AudioCaptureAllowedUrls\"]==u else 1)" "$(native $T/root/etc/chromium/policies/managed/appelermamie.json)"'
 check "installation log written" 'grep -q "INSTALACIÓN" $T/home/ofic/appelermamie-install.log'
+check "second screen: labwc rule (window of ecran.html -> HDMI-A-2), without ToggleFullscreen" 'grep -q "<windowRule identifier=\"\*ecran\*\">" $T/home/ofic/.config/labwc/rc.xml && grep -q "<action name=\"MoveToOutput\" output=\"HDMI-A-2\"/>" $T/home/ofic/.config/labwc/rc.xml && ! grep -q ToggleFullscreen $T/home/ofic/.config/labwc/rc.xml'
+check "touch screen: touches mapped to the second screen only (never the whole desktop, review of 23/10/2026)" 'grep -q "<touch mapToOutput=\"HDMI-A-2\"/>" $T/home/ofic/.config/labwc/rc.xml'
+check "... rc.xml created valid (merged by labwc -m with the one of the system)" '"$REALPY" -c "import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1])" "$(native $T/home/ofic/.config/labwc/rc.xml)"'
+check "Chromium script: second window ecran.html (--app), never with the secret" 'grep -q -- "--app=" $APP/launch_chromium.sh && grep "ecran.html" $APP/launch_chromium.sh | grep -qv "secret" && ! grep "ecran.html" $APP/launch_chromium.sh | grep -q "secret"'
 
 check "config.py installed with HDMI_PORT = 3 by default" 'grep -q "^HDMI_PORT = 3$" $APP/config.py'
 check "self-repair: step shown" 'grep -q "\[9/11\] Reparación automática" $T/out.txt'
@@ -142,7 +146,7 @@ check "folder copied (not a git clone): version unknown, told that remote update
 check "list of the packages installed kept" 'grep -q "ffmpeg.*chromium" $APP/.apt-packages'
 
 echo "=== 2. Update (run again, custom settings, restart accepted)"
-sed -i -e 's|^MOUSE_DEVICE = None|MOUSE_DEVICE = "/dev/input/event4"|' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' -e 's|^VOICE_VOLUME = 1.5|VOICE_VOLUME = 1.2|' -e 's|^SERVER_URL = "wss://appelermami.fr"|SERVER_URL = "wss://appelermami.fr:8443"|' -e 's|^HDMI_PORT = 3|HDMI_PORT = 2|' -e 's|^NIGHTLY_REBOOT_HOUR = 4|NIGHTLY_REBOOT_HOUR = None|' -e 's|^RINGTONE_PATH = .*|RINGTONE_PATH = str(BASE_DIR / "my-ringtone.wav")|' $APP/config.py
+sed -i -e 's|^MOUSE_DEVICE = None|MOUSE_DEVICE = "/dev/input/event4"|' -e 's|^AUDIO_DEVICE = None|AUDIO_DEVICE = "AUDIO"|' -e 's|^VOICE_VOLUME = 1.5|VOICE_VOLUME = 1.2|' -e 's|^SERVER_URL = "wss://appelermami.fr"|SERVER_URL = "wss://appelermami.fr:8443"|' -e 's|^HDMI_PORT = 3|HDMI_PORT = 2|' -e 's|^NIGHTLY_REBOOT_HOUR = 4|NIGHTLY_REBOOT_HOUR = None|' -e 's|^SECOND_SCREEN = "auto"|SECOND_SCREEN = False|' -e 's|^RINGTONE_PATH = .*|RINGTONE_PATH = str(BASE_DIR / "my-ringtone.wav")|' $APP/config.py
 # A list of stations of one's own, on several lines
 "$REALPY" - "$(native $APP/config.py)" <<'PY'
 import sys
@@ -165,6 +169,7 @@ check "radio stations of one's own (several lines) kept, config.py still valid" 
 check "custom HDMI_PORT (2) kept" 'grep -q "^HDMI_PORT = 2$" $APP/config.py'
 check "ringtone of one's own: RINGTONE_PATH kept, its .mp3 converted" 'grep -q "^RINGTONE_PATH = str(BASE_DIR / \"my-ringtone.wav\")" $APP/config.py && [ -f $APP/my-ringtone.wav ]'
 check "custom NIGHTLY_REBOOT_HOUR (None) kept" 'grep -q "^NIGHTLY_REBOOT_HOUR = None$" $APP/config.py'
+check "SECOND_SCREEN = False kept" 'grep -q "^SECOND_SCREEN = False$" $APP/config.py'
 check "config.txt: TV setting added only once" '[ "$(grep -c "^hdmi_ignore_cec_init=1$" $T/root/boot/firmware/config.txt)" = 1 ]'
 check "custom AUDIO_DEVICE and VOICE_VOLUME kept" 'grep -q "^AUDIO_DEVICE = \"AUDIO\"" $APP/config.py && grep -q "^VOICE_VOLUME = 1.2" $APP/config.py'
 check "MOUSE_DEVICE /dev/input/event4 replaced by automatic detection" 'grep -q "^MOUSE_DEVICE = None" $APP/config.py && grep -q "event4\" (ruta inestable)" $T/out.txt'
@@ -270,8 +275,10 @@ check "--city \"\": no weather (postal code and country set to None too)" 'grep 
 echo "=== 12. --update: no question, no restart of the Raspberry"
 fresh
 run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
+sed -i 's|<openbox_config xmlns="http://openbox.org/3.4/rc">|&<keyboard><repeatRate>25</repeatRate></keyboard>|' $T/home/ofic/.config/labwc/rc.xml
 : > $T/calls.log
 APPELERMAMIE_VERSION=v0.2.0 run '' "$T/src/Raspberry_receiver/install.sh" --update
+check "update: own labwc settings kept, rule added only once, rc.xml valid" 'grep -q "<repeatRate>25</repeatRate>" $T/home/ofic/.config/labwc/rc.xml && [ "$(grep -c "identifier=\"\*ecran\*\"" $T/home/ofic/.config/labwc/rc.xml)" = 1 ] && [ "$(grep -c "mapToOutput" $T/home/ofic/.config/labwc/rc.xml)" = 1 ] && "$REALPY" -c "import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1])" "$(native $T/home/ofic/.config/labwc/rc.xml)"'
 check "update ends without error, without any answer" '[ "$(cat $T/rc.txt)" = 0 ]'
 check "language of the Raspberry kept without question" 'grep -q "INSTALACIÓN" $T/out.txt && grep -q "^LANGUAGE = \"es\"" $APP/config.py && ! grep -q "Langue / Language" $T/out.txt'
 check "packages unchanged: apt not run" '! grep -q "apt-get" $T/calls.log && grep -q "Paquetes sin cambios" $T/out.txt'

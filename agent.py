@@ -41,11 +41,13 @@ Main agent:
 
 import asyncio
 import datetime
+import getpass
 import json
 import os
 import re
 import signal
 import socket
+import subprocess
 import threading
 import time
 
@@ -117,6 +119,17 @@ def weather_place():
     return place if place["city"] or place["postcode"] else None
 
 
+def is_touch_screen(device):
+    """
+    True for a touch screen (it points directly on the screen,
+    INPUT_PROP_DIRECT), even one that also sends a left button.
+    """
+    try:
+        return getattr(ecodes, "INPUT_PROP_DIRECT", 1) in (device.input_props() or [])
+    except (AttributeError, OSError):
+        return False
+
+
 class TVControlAgent:
     def __init__(self):
         self.ws = None
@@ -150,6 +163,10 @@ class TVControlAgent:
         # Time when the server said the TV page was stuck during a call
         # (display_stuck): selfheal.py restarts Chromium after it
         self.display_stuck_at = None
+        # Second screen (touch page) seen at the last check (None: not checked
+        # yet), and a kiosk restart waiting for the end of a call
+        self.second_screen_seen = None
+        self.kiosk_restart_pending = False
         self.alive_interval = 30
         # Spoken commands (model loaded outside calls only) and last one done
         self.voice = voice_commands.VoiceCommands()
@@ -765,7 +782,9 @@ class TVControlAgent:
                 capabilities = device.capabilities()
             except OSError:
                 continue  # unplugged meanwhile, or not readable
-            if ecodes.BTN_LEFT not in capabilities.get(ecodes.EV_KEY, []):
+            if ecodes.BTN_LEFT not in capabilities.get(ecodes.EV_KEY, []) or is_touch_screen(device):
+                # A touch screen (second screen) is never the answer button:
+                # a finger answers only with the "Answer" button of its page
                 device.close()
             elif ecodes.REL_X in capabilities.get(ecodes.EV_REL, []):
                 mice.append(device)
@@ -1183,6 +1202,35 @@ class TVControlAgent:
         except Exception as e:
             print(f"⚠️ Screen mode not checked: {e}")
 
+    def check_second_screen(self):
+        """
+        Second screen plugged or unplugged (display_mode.second_screen): the
+        kiosk is restarted so that it opens the right windows, outside a
+        ringing call or a call only (otherwise at the next check after it).
+        """
+        try:
+            present = display_mode.second_screen() is not None
+        except Exception as e:
+            print(f"⚠️ Second screen not checked: {e}")
+            return
+        if self.second_screen_seen is not None and present != self.second_screen_seen:
+            print(f"🖥️ Second screen {'plugged' if present else 'unplugged'}: the kiosk will open its windows again")
+            # Plugged then unplugged during a call: nothing changed for the kiosk
+            self.kiosk_restart_pending = not self.kiosk_restart_pending
+        self.second_screen_seen = present
+        if self.kiosk_restart_pending and not self.in_call():
+            self.kiosk_restart_pending = False
+            self.restart_kiosk()
+
+    @staticmethod
+    def restart_kiosk():
+        """Stops the Chromium of this user: systemd starts the kiosk again (Restart=always)."""
+        try:
+            subprocess.run(["pkill", "-u", getpass.getuser(), "-x", "chromium"], timeout=10)
+            print("🖥️ Kiosk restarted (second screen)")
+        except (OSError, subprocess.SubprocessError) as e:
+            print(f"⚠️ Kiosk not restarted: {e}")
+
     async def mouse_listener(self):
         """
         Listens to mouse clicks and accepts the call during a call window.
@@ -1297,6 +1345,8 @@ class TVControlAgent:
             await asyncio.to_thread(self.keep_cec_ready)
             # 1920 x 1080 again if the TV gave its 4K mode back
             await asyncio.to_thread(self.keep_screen_mode)
+            # Second screen plugged or unplugged: kiosk opened again
+            await asyncio.to_thread(self.check_second_screen)
             await asyncio.sleep(self.alive_interval)
 
     # ---------------------------------------------------------

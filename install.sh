@@ -325,7 +325,7 @@ import sys
 new_path, old_path, lang, greeting_set, greeting = sys.argv[1:6]
 weather_set, weather = sys.argv[6], dict(zip(("WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY"), sys.argv[7:10]))
 KEPT = ("SERVER_URL", "UNAUTHORIZED_RETRY_DELAY", "MOUSE_DEVICE", "MOUSE_RETRY_DELAY",
-        "HDMI_PORT", "AUDIO_DEVICE", "CALL_AUDIO_OUTPUT", "SCREEN_MODE", "VOICE_REACTION", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
+        "HDMI_PORT", "AUDIO_DEVICE", "CALL_AUDIO_OUTPUT", "SCREEN_MODE", "SECOND_SCREEN", "VOICE_REACTION", "RINGTONE_PATH", "CALL_DURATION", "MAX_CACHED_CALLS",
         "MAX_CALLER_NAME_LENGTH", "VOICE_VOLUME", "RINGTONE_VOLUME", "QUIET_START_HOUR", "QUIET_END_HOUR",
         "NIGHTLY_REBOOT_HOUR",
         "GREETING_NAME", "WEATHER_CITY", "WEATHER_POSTCODE", "WEATHER_COUNTRY", "VOICE_COMMANDS", "TV_NAME",
@@ -639,6 +639,44 @@ domain="$(cd "$APP_DIR" && "$PYTHON" -c 'import config; print(config.SERVER_URL.
 sudo mkdir -p /etc/chromium/policies/managed
 printf '{\n  "VideoCaptureAllowedUrls": ["https://%s", "https://%s:8443"],\n  "AudioCaptureAllowedUrls": ["https://%s", "https://%s:8443"]\n}\n' \
   "$domain" "$domain" "$domain" "$domain" | sudo tee /etc/chromium/policies/managed/appelermamie.json >/dev/null
+
+# Second screen (PLAN_SECOND_ECRAN.md): the window of the touch page
+# (ecran.html, opened with --app by launch_chromium.sh: its window is named
+# after its address) goes to the second micro-HDMI, HDMI-A-2. Rule added once
+# to the labwc settings of the user (merged with the ones of the system,
+# labwc -m); the rest of the file is kept. No ToggleFullscreen: the kiosk
+# already makes the window fullscreen (the action would undo it).
+"$PYTHON" - "$HOME/.config/labwc/rc.xml" <<'PY' || true
+import os
+import sys
+
+path = sys.argv[1]
+RULE = ('<windowRule identifier="*ecran*">'
+        '<action name="MoveToOutput" output="HDMI-A-2"/></windowRule>')
+try:
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+except OSError:
+    text = ""
+if 'identifier="*ecran*"' not in text:
+    if "<windowRules>" in text:
+        text = text.replace("<windowRules>", "<windowRules>\n    " + RULE, 1)
+    elif "</openbox_config>" in text:
+        text = text.replace("</openbox_config>", "  <windowRules>\n    " + RULE + "\n  </windowRules>\n</openbox_config>", 1)
+    else:
+        text = ('<?xml version="1.0"?>\n<openbox_config xmlns="http://openbox.org/3.4/rc">\n'
+                "  <windowRules>\n    " + RULE + "\n  </windowRules>\n</openbox_config>\n")
+# Touch screen: its touches on the second screen only (with two screens,
+# labwc would otherwise spread them over the whole desktop, TV included)
+TOUCH = '<touch mapToOutput="HDMI-A-2"/>'
+if 'mapToOutput="HDMI-A-2"' not in text:
+    text = text.replace("</openbox_config>", "  " + TOUCH + "\n</openbox_config>", 1)
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path, "w", encoding="utf-8", newline="\n") as f:
+    f.write(text)
+PY
+# The desktop reads its settings again (nothing if it is not running)
+pkill -HUP -x -u "$(id -un)" labwc 2>/dev/null || true
 
 # ---------------------------------------------------------
 # Summary: QR code and identifier to send to the server administrator

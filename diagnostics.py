@@ -271,6 +271,15 @@ def check_screen():
     return check("screen", "warn" if too_big and wanted else "ok", value)
 
 
+def check_second_screen():
+    """Second screen on HDMI-A-2 (touch page, PLAN_SECOND_ECRAN.md), or none."""
+    import display_mode
+    size = display_mode.second_screen()
+    if size is None:
+        return check("second_screen", "info", "-")
+    return check("second_screen", "ok", f"{display_mode.SECOND_OUTPUT}: {size[0]}x{size[1]}")
+
+
 def check_weather():
     """Place of the weather of the home screen (config.py), set or not."""
     parts = [str(getattr(config, name, None) or "").strip()
@@ -463,7 +472,7 @@ def run_checks(skip_cec=False):
     checks += [
         safe(check_selfheal), safe(check_chromium_version),
         safe(check_server), safe(check_interfaces), safe(check_wifi), safe(check_wifi_powersave),
-        safe(check_hdmi), safe(check_screen), safe(check_cec, skip_cec),
+        safe(check_hdmi), safe(check_screen), safe(check_second_screen), safe(check_cec, skip_cec),
         safe(check_weather), safe(check_voice),
         safe(check_camera), safe(check_microphone), safe(check_speaker), safe(check_call_audio), safe(check_mouse),
         safe(check_disk), safe(check_memory), safe(check_temperature), safe(check_power),

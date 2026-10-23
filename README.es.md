@@ -2,6 +2,8 @@
 
 [English](README.md) | [Français](README.fr.md) | **Español**
 
+Lo que cambió en cada versión: [CHANGELOG.md](CHANGELOG.md) (en inglés).
+
 La Raspberry Pi está conectada al televisor de la persona que recibe la llamada. Ejecuta
 **dos programas** que se conectan al servidor con la misma identidad:
 
@@ -263,6 +265,7 @@ solos, sin reiniciar. El servidor guarda entonces el secreto del dispositivo.
 | `AUDIO_DEVICE` | `None` (detección automática) | Altavoz del tono: el primer altavoz USB encontrado. Solo hay que indicarlo para imponer una tarjeta concreta (nombre entre corchetes en `aplay -l`) |
 | `CALL_AUDIO_OUTPUT` | `"auto"` | Salida del sonido de la llamada: el televisor (HDMI) si un televisor responde por HDMI-CEC y acepta sonido, si no el altavoz USB. `"hdmi"` o `"usb"` para imponerla |
 | `SCREEN_MODE` | `"1080p"` | Resolución de la pantalla: un televisor que da 4K pasa a 1920 × 1080, hasta 60 Hz (llamadas más fluidas). `None` deja la pantalla como la quiere el televisor |
+| `SECOND_SCREEN` | `"auto"` | **Segunda pantalla** (pantalla táctil junto a la tele, en el 2.º micro-HDMI, HDMI-A-2; la tele está siempre en el del lado de la alimentación): muestra la página táctil (`ecran.html`), sincronizada con la página de la tele; al conectarla o desconectarla, el quiosco vuelve a abrir sus ventanas (fuera de llamadas). `False` = nunca. Pi 4 o Pi 5 (Pi 5 sin probar); con una Pi 4 de 2 GB las llamadas van a tirones (medido el 23/10/2026): se aconsejan una Pi de 4 GB y un ventilador |
 | `VOICE_REACTION` | `True` | Fuera de las llamadas, se mide el volumen del micrófono para que el robot de la página de la TV se mueva cuando alguien habla (no se graba ni se envía nada). `False` = micrófono nunca usado fuera de las llamadas |
 | `VOICE_COMMANDS` | `True` | Órdenes de voz al robot («Robot hola», hora, tiempo, radio, volumen, llamada), reconocidas en la Raspberry (no se envía nada), nunca durante una llamada; necesita `VOICE_REACTION`. `False` = ninguna |
 | `RADIO_STATIONS` | `None` (emisoras del país) | Radio: `None` = las emisoras del país de la tele (`radio_stations.py`: Francia, España, Reino Unido, Portugal, México, Estados Unidos; país de los ajustes, si no el idioma); o una lista propia: nombre, frecuencia FM (solo para pedirla) y dirección del flujo de cada emisora; se conserva al actualizar (la antigua lista de París del proyecto deja paso a las emisoras del país). El volumen dicho por voz se guarda en `radio_volume.txt` para la radio (0 a 100 %, 20 % al principio; barra de la página de la radio, página de ajustes, «Robot, volumen 5» mientras suena = 50 %) y en `voice_volume.txt` para la voz del robot (nivel 1 a 10, 8 al principio; página de ajustes, «Robot, volumen 5» con la radio apagada), la última emisora en `radio_station.txt` |

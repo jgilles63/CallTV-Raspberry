@@ -35,6 +35,9 @@ import config
 
 # ELD of the HDMI sound cards: what the screen says about sound
 ELD_GLOB = "/proc/asound/card*/eld#*"
+# Sound card of the micro-HDMI of the TV (HDMI-A-1); the other one
+# (vc4hdmi1) is the one of a second screen (PLAN_SECOND_ECRAN.md)
+TV_CARD_ID = "vc4hdmi0"
 
 # How long the HDMI output is waited for (the TV has just been turned on)
 HDMI_ATTEMPTS = 15
@@ -122,7 +125,29 @@ def hdmi_cards_with_sound():
             card = os.path.basename(os.path.dirname(path))[len("card"):]
             if card.isdigit() and card not in cards:
                 cards.append(card)
+    # With a second screen: only the TV, never the second screen, even while
+    # the TV wakes up and has no sound yet (nothing then: the caller waits)
+    if second_screen_plugged():
+        return [c for c in cards if card_id(c) == TV_CARD_ID]
     return cards
+
+
+def second_screen_plugged():
+    try:
+        import display_mode
+        return display_mode.second_screen() is not None
+    except Exception:
+        return False
+
+
+def card_id(card):
+    """ALSA name of a card number ("vc4hdmi0"), or "" if unknown."""
+    folder = os.path.dirname(os.path.dirname(ELD_GLOB))
+    try:
+        with open(os.path.join(folder, f"card{card}", "id"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 def hdmi_profile(device):
@@ -166,6 +191,16 @@ def usb_sink():
 
 def set_default(node_id):
     return run(["wpctl", "set-default", str(node_id)]) is not None
+
+
+def tv_hdmi_as_default():
+    """
+    Ringtone without USB speaker while a second screen is plugged: the HDMI
+    output of the TV is made the default output first (never the one of the
+    second screen). True if done.
+    """
+    node = hdmi_sink()
+    return node is not None and set_default(node)
 
 
 def route_call_audio(tv_present):

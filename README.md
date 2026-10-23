@@ -2,6 +2,8 @@
 
 **English** | [Français](README.fr.md) | [Español](README.es.md)
 
+What changed in each version: [CHANGELOG.md](CHANGELOG.md).
+
 The Raspberry Pi is plugged into the TV of the person being called. It runs **two
 programs** that connect to the server with the same identity:
 
@@ -257,6 +259,7 @@ their own, without a restart. The server then pins the device secret.
 | `AUDIO_DEVICE` | `None` (automatic detection) | Ringtone speaker: the first USB speaker found. Only set it to force a specific card (name between brackets in `aplay -l`) |
 | `CALL_AUDIO_OUTPUT` | `"auto"` | Output of the call sound: the TV (HDMI) if a TV answers HDMI-CEC and accepts sound, otherwise the USB speaker. `"hdmi"` or `"usb"` to force it |
 | `SCREEN_MODE` | `"1080p"` | Screen resolution: a TV giving 4K is set to 1920 x 1080, up to 60 Hz (smoother video calls). `None` leaves the screen as the TV wants it |
+| `SECOND_SCREEN` | `"auto"` | **Second screen** (touch screen next to the TV, on the second micro-HDMI, HDMI-A-2; the TV is always on the one next to the power socket): it shows the touch page (`ecran.html`), kept in step with the TV page; plugged or unplugged, the kiosk opens its windows again (outside calls). `False` = never. Pi 4 or Pi 5 (Pi 5 not tested); with a 2 GB Pi 4, calls lag (measured 23/10/2026): a 4 GB Pi and a fan are advised |
 | `VOICE_REACTION` | `True` | Outside calls, the volume of the microphone is measured so that the robot of the TV page moves when someone speaks (nothing recorded or sent). `False` = microphone never used outside calls |
 | `VOICE_COMMANDS` | `True` | Spoken commands to the robot ("Robot bonjour", time, weather, radio, volume, call), recognized on the Raspberry (nothing is sent), never during a call; needs `VOICE_REACTION`. `False` = none |
 | `RADIO_STATIONS` | `None` (stations of the country) | Radio: `None` = the stations of the country of the TV (`radio_stations.py`: France, Spain, United Kingdom, Portugal, Mexico, United States; country of the settings page, else the language); or one's own list: name, FM frequency (only to ask for it) and address of the stream of each station; kept on update (the former list of Paris of the project gives way to the stations of the country). The volume said by voice is kept in `radio_volume.txt` for the radio (0 to 100 %, 20 % at first; slider of the radio page, settings page, "Robot, volume 5" while it plays = 50 %) and in `voice_volume.txt` for the voice of the robot (level 1 to 10, 8 at first; settings page, "Robot, volume 5" when the radio is off), the last station in `radio_station.txt` |

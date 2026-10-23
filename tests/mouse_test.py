@@ -36,12 +36,16 @@ class FakeDevice:
         self.path = path
         self.name = plugged[path]["name"]
         self._caps = plugged[path]["caps"]
+        self._props = plugged[path].get("props", [])
         self.queue = plugged[path]["queue"]
         self.closed = False
         opened.append(self)
 
     def capabilities(self):
         return self._caps
+
+    def input_props(self):
+        return self._props
 
     def close(self):
         self.closed = True
@@ -54,8 +58,8 @@ class FakeDevice:
             yield types.SimpleNamespace(type=EV_KEY, code=item, value=1)
 
 
-def plug(path, name, caps):
-    plugged[path] = {"name": name, "caps": caps, "queue": asyncio.Queue()}
+def plug(path, name, caps, props=()):
+    plugged[path] = {"name": name, "caps": caps, "props": list(props), "queue": asyncio.Queue()}
 
 
 def unplug(path):
@@ -69,7 +73,9 @@ def click(path, code=BTN_LEFT):
 evdev = types.ModuleType("evdev")
 evdev.InputDevice = FakeDevice
 evdev.list_devices = lambda: list(plugged)
-evdev.ecodes = types.SimpleNamespace(EV_KEY=EV_KEY, EV_REL=EV_REL, BTN_LEFT=BTN_LEFT, REL_X=REL_X)
+INPUT_PROP_DIRECT = 1
+evdev.ecodes = types.SimpleNamespace(EV_KEY=EV_KEY, EV_REL=EV_REL, BTN_LEFT=BTN_LEFT, REL_X=REL_X,
+                                     INPUT_PROP_DIRECT=INPUT_PROP_DIRECT)
 sys.modules["evdev"] = evdev
 
 import agent  # noqa: E402  (the real agent, with the simulated evdev)
@@ -77,6 +83,9 @@ import agent  # noqa: E402  (the real agent, with the simulated evdev)
 MOUSE = {EV_KEY: [BTN_LEFT, 273], EV_REL: [REL_X, 1]}
 KEYBOARD = {EV_KEY: [KEY_A, 31]}
 TOUCHPAD = {EV_KEY: [BTN_LEFT, 330], EV_ABS: [0, 1]}
+# USB touch screen of the second screen (PLAN_SECOND_ECRAN.md): some send a
+# left button too; they say they point directly on the screen (INPUT_PROP_DIRECT)
+TOUCH_SCREEN = {EV_KEY: [BTN_LEFT, 330], EV_ABS: [0, 1, 47, 53, 54]}
 
 results = []
 
@@ -166,5 +175,21 @@ async def main():
 
 
 asyncio.run(main())
+
+# --- Touch screen of the second screen: never the button of Mamie ---
+async def touch_screen():
+    cfg.MOUSE_DEVICE = None
+    plugged.clear()
+    plug("/dev/input/event2", "Touch screen 7in", TOUCH_SCREEN, props=[INPUT_PROP_DIRECT])
+    check("touch screen alone: not taken as the mouse (a finger never answers)", agent.TVControlAgent.find_mouse() is None)
+    plug("/dev/input/event4", "Touchpad", TOUCHPAD)
+    found = agent.TVControlAgent.find_mouse()
+    check("touch screen + touchpad: the touchpad, as before", found is not None and found.path == "/dev/input/event4")
+    plug("/dev/input/event8", "3D printed mouse", MOUSE)
+    found = agent.TVControlAgent.find_mouse()
+    check("touch screen + real mouse: the real mouse", found is not None and found.path == "/dev/input/event8")
+
+
+asyncio.run(touch_screen())
 print(f"\n{sum(results)} passed, {len(results) - sum(results)} failed")
 sys.exit(0 if all(results) else 1)

@@ -137,7 +137,7 @@ for power, state in ((POWER_STANDBY, "standby"), (POWER_TO_ON, "to-on")):
     tv.tv_on_and_accept()
     check(f"TV {state}: power \"{state}\", tv_present=True", tv.tv_power() == state and routes == [True], routes)
 
-# --- Computer monitor without CEC (julienraspberry) ---
+# --- Computer monitor without CEC (Pi of the tests) ---
 tv, fake = load({"/dev/cec0": {"physical": "1.0.0.0", "declared": False, "power": None},
                  "/dev/cec1": {"physical": "f.f.f.f", "declared": False}})
 routes.clear()

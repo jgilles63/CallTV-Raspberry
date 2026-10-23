@@ -125,6 +125,58 @@ check("current mode: [(HDMI-A-1, (3840, 2160, 30.0))]", d.current_mode() == [("H
 with_listing(TWO_OUTPUTS)
 check("current mode: enabled outputs only", [name for name, _ in d.current_mode()] == ["HDMI-A-1"])
 
+# --- Second screen on HDMI-A-2 (PLAN_SECOND_ECRAN.md; seen on 23/10/2026: TV + Acer) ---
+SMALL_SCREEN = '''HDMI-A-2 "Touch screen 7in"
+  Enabled: yes
+  Modes:
+    1024x600 px, 60.000000 Hz (preferred, current)
+'''
+BIG_SCREEN = '''HDMI-A-2 "Big monitor"
+  Enabled: yes
+  Modes:
+    2560x1440 px, 59.951000 Hz (preferred, current)
+    1920x1080 px, 60.000000 Hz
+'''
+check("outputs: TV on HDMI-A-1, second screen on HDMI-A-2", d.TV_OUTPUT == "HDMI-A-1" and d.SECOND_OUTPUT == "HDMI-A-2")
+cfg.SECOND_SCREEN = "auto"
+with_listing(MONITOR)
+check("TV alone: no second screen", d.second_screen() is None)
+with_listing(MONITOR + SMALL_SCREEN)
+check("TV + 7in screen on HDMI-A-2: its size (1024, 600)", d.second_screen() == (1024, 600), d.second_screen())
+with_listing(SMALL_SCREEN.replace("HDMI-A-2", "HDMI-A-1"))
+check("a small screen on HDMI-A-1 is the TV, not a second screen", d.second_screen() is None)
+with_listing(TWO_OUTPUTS)
+check("HDMI-A-2 disabled: no second screen", d.second_screen() is None)
+with_listing(SMALL_SCREEN)
+check("a TV alone on HDMI-A-2 (the other port): one screen, not a second screen (review of 23/10/2026)", d.second_screen() is None)
+with_listing(TWO_OUTPUTS.replace("HDMI-A-1", "HDMI-A-X").replace("HDMI-A-2", "HDMI-A-1").replace("HDMI-A-X", "HDMI-A-2"))
+check("HDMI-A-1 disabled, screen on HDMI-A-2: not a second screen", d.second_screen() is None)
+cfg.SECOND_SCREEN = False
+with_listing(MONITOR + SMALL_SCREEN)
+check("SECOND_SCREEN = False: never a second screen", d.second_screen() is None)
+cfg.SECOND_SCREEN = "auto"
+with_listing(None)
+check("wlr-randr missing: no second screen, no crash", d.second_screen() is None)
+del cfg.SECOND_SCREEN
+with_listing(MONITOR + SMALL_SCREEN)
+check("older config.py without SECOND_SCREEN: \"auto\"", d.second_screen() == (1024, 600))
+import contextlib  # noqa: E402
+import io  # noqa: E402
+with_listing(MONITOR + SMALL_SCREEN)
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = d.main(["--second"])
+check("display_mode.py --second (launch_chromium.sh): prints 1024x600, exit 0", code == 0 and out.getvalue().strip() == "1024x600", out.getvalue())
+with_listing(MONITOR)
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = d.main(["--second"])
+check("display_mode.py --second without second screen: nothing printed, exit 1", code == 1 and out.getvalue() == "")
+fake = with_listing(MONITOR + BIG_SCREEN)
+d.ensure_screen_mode()
+check("second screen wider than 1920: set to 1920x1080 like the TV",
+      fake.set_commands() == [["wlr-randr", "--output", "HDMI-A-2", "--mode", "1920x1080@60.000000Hz"]], fake.set_commands())
+
 # --- Environment (system services: no XDG_RUNTIME_DIR, no WAYLAND_DISPLAY) ---
 runtime = tempfile.mkdtemp()
 for name in ("wayland-1", "wayland-1.lock"):
@@ -152,9 +204,20 @@ check("report: 1920x1080 -> ok", diagnostics.check_screen() == {"id": "screen", 
       diagnostics.check_screen())
 with_listing(None)
 check("report: unknown -> info", diagnostics.check_screen()["status"] == "info")
+cfg.SECOND_SCREEN = "auto"
+with_listing(MONITOR + SMALL_SCREEN)
+check("report: second screen -> ok, its output and size",
+      diagnostics.check_second_screen() == {"id": "second_screen", "status": "ok", "value": "HDMI-A-2: 1024x600"},
+      diagnostics.check_second_screen())
+with_listing(MONITOR)
+check("report: no second screen -> info", diagnostics.check_second_screen() == {"id": "second_screen", "status": "info", "value": "-"})
+# (the label of the server, private repository, is checked by its own tests)
+check("report: second screen line translated (fr, en, es)",
+      all(__import__("i18n").MESSAGES[lang].get("diag.check.second_screen") for lang in ("fr", "en", "es")))
 
 real_config = (Path(__file__).resolve().parents[1] / "config.py").read_text(encoding="utf-8")
 check("config.py: SCREEN_MODE = \"1080p\" by default", '\nSCREEN_MODE = "1080p"\n' in real_config)
+check("config.py: SECOND_SCREEN = \"auto\" by default", '\nSECOND_SCREEN = "auto"\n' in real_config)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

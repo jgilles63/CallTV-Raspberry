@@ -18,6 +18,11 @@ changed. Called when Chromium starts (launch_chromium.sh) and every 30 s by
 the agent (the TV may give its 4K mode again when it is plugged back in).
 config.SCREEN_MODE = None leaves the screen as the TV wants it.
 
+second_screen(): size of a second screen plugged on the second micro-HDMI
+(HDMI-A-2; the TV is always HDMI-A-1, the one next to the power socket), or
+None. With one, the touch page of the TV (ecran.html) opens on it
+(launch_chromium.sh). config.SECOND_SCREEN = False: never.
+
 Tool: wlr-randr (desktop of Raspberry Pi OS, labwc / Wayland). Runs as the
 user of the Raspberry; the Wayland socket is found in /run/user/<uid>/.
 """
@@ -34,6 +39,9 @@ TARGET = (1920, 1080)
 # Highest refresh rate chosen (60 Hz, or 59.94 Hz)
 MAX_REFRESH = 60.5
 COMMAND_TIMEOUT = 10
+# The TV, and the second screen (touch page)
+TV_OUTPUT = "HDMI-A-1"
+SECOND_OUTPUT = "HDMI-A-2"
 
 MODE_LINE = re.compile(r"^\s+(\d+)x(\d+) px, ([\d.]+) Hz(.*)$")
 
@@ -98,6 +106,20 @@ def current_mode():
     return [(o["name"], o["current"]) for o in parse_outputs(run(["wlr-randr"])) if o["enabled"] and o["current"]]
 
 
+def second_screen():
+    """
+    (width, height) of the screen on HDMI-A-2 when the TV is on HDMI-A-1
+    too, or None. A TV plugged alone on HDMI-A-2 is one screen: no change.
+    """
+    if getattr(config, "SECOND_SCREEN", "auto") is False:
+        return None
+    shown = {o["name"]: o["current"] for o in parse_outputs(run(["wlr-randr"])) if o["enabled"] and o["current"]}
+    if TV_OUTPUT not in shown or SECOND_OUTPUT not in shown:
+        return None
+    width, height, _refresh = shown[SECOND_OUTPUT]
+    return (width, height)
+
+
 def ensure_screen_mode():
     """Sets 1920 x 1080 on the outputs wider than 1920 pixels. Returns [(name, mode)] changed."""
     if getattr(config, "SCREEN_MODE", "1080p") != "1080p":
@@ -117,5 +139,22 @@ def ensure_screen_mode():
     return changed
 
 
-if __name__ == "__main__":
+def main(argv):
+    """
+    No argument: 4K TV set to 1920 x 1080 (start of Chromium).
+    --second: prints the size of the second screen ("1024x600") and exits 0,
+    or prints nothing and exits 1 (launch_chromium.sh opens the touch page).
+    """
+    if "--second" in argv:
+        size = second_screen()
+        if size is None:
+            return 1
+        print(f"{size[0]}x{size[1]}")
+        return 0
     ensure_screen_mode()
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))

@@ -461,6 +461,20 @@ def say(key):
     return play_wav(spoken_wav(key))
 
 
+def tv_output_first():
+    """
+    Default output with a second screen plugged (PLAN_SECOND_ECRAN.md): the
+    TV, never the second screen. One screen: the default output as before.
+    """
+    try:
+        import call_audio
+        import display_mode
+        if display_mode.second_screen() is not None:
+            call_audio.tv_hdmi_as_default()
+    except Exception as e:  # the ringtone must ring anyway
+        print(f"⚠️ TV output not chosen: {e}")
+
+
 class AlertSound:
     """
     Manages the audio playback process (aplay) of the call ringtone.
@@ -484,6 +498,8 @@ class AlertSound:
         # back in (any USB port) is found again.
         card = find_ringing_card()
         set_max_volume(card)
+        if card is None:
+            tv_output_first()
 
         wav_path = None
 
@@ -509,6 +525,7 @@ class AlertSound:
                 return  # still playing: all good
             if exit_code != 0:
                 print(f"⚠️ Playback failed on '{card['id']}', ringing on the default output (HDMI)")
+                tv_output_first()
                 self.process = subprocess.Popen(["aplay", "-D", "default", wav_path])
 
     def stop(self):
