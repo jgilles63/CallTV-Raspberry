@@ -68,7 +68,6 @@ HDMI-CEC : unknown »).
 | `update.sh` | **Mise à jour à distance** vers une version signée (voir « Mises à jour à distance ») |
 | `ColdStart/allowed_signers` | Clé publique qui signe les versions (installée une fois sur le Raspberry) |
 | `switch_server.sh` | Bascule le Raspberry entre le serveur de **production** et le serveur de **test** (voir plus bas) |
-| `HomeAssistant/send_sigur_fromAlexa.sh` | Décroche à distance en envoyant `SIGUSR1` à l'agent |
 
 ## Langue
 
@@ -109,7 +108,7 @@ de l'agent sont en anglais.
 3. **Décroché**, par l'un de ces trois moyens :
    - un **clic gauche** sur la souris (lue avec `evdev`, **détectée automatiquement** : n'importe
      quel modèle, n'importe quel port USB, retrouvée après un débranchement) ;
-   - le signal **`SIGUSR1`** (`kill -USR1 <pid>`, voir `HomeAssistant/`) ;
+   - le signal **`SIGUSR1`** (`kill -USR1 <pid>`) ;
    - le bouton **Répondre** de `receveur.html` (synchronisé par le serveur) ;
    - **OK sur la télécommande de la TV**, quand la TV affiche l'entrée du Raspberry (Retour
      refuse ; pendant l'appel, Retour raccroche).

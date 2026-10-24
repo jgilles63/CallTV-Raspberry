@@ -16,6 +16,34 @@ settings changed on the TV.
 
 ---
 
+## v0.4.1 — 24/10/2026
+
+**Less heat.** The TV page rests while the TV is in standby (with the
+server of 24/10/2026, which also draws the TV page less often).
+
+### New
+- **TV state for the TV page** (`agent.py`, `report_tv_state`): every 30 s, outside a ringing call or a call, the
+  agent asks the TV its power status (HDMI-CEC, `tv_control.tv_power`) and sends `tv_state` (`watching`: false in
+  standby or going to standby; true when on, waking up, or without CEC answer such as a computer monitor). The
+  TV page rests while nobody watches (less heat); the touch page of a second screen never rests.
+
+### Removed
+- `HomeAssistant/send_sigur_fromAlexa.sh` (answering through Alexa and Home Assistant, not used): no longer
+  installed; `install.sh --update` removes the copy of an installed Raspberry. Answering a call with the
+  `SIGUSR1` signal to the agent still works.
+- The READMEs no longer mention this script.
+
+### Update
+- Update the server first: a server older than 24/10/2026 does not know `tv_state`, ignores it (a warning in
+  its log every 30 s) and the TV page never rests. No new setting in `config.py`.
+
+### Tests
+- `install_test.sh`: the former script is removed on update and never installed again.
+- New `tests/tv_state_test.py` (standby, on, waking up, no CEC, not during a call, not before registration,
+  CEC error).
+
+---
+
 ## v0.4.0 — 23/10/2026
 
 **Second screen next to the TV.** A screen (a 7" touch screen is aimed at)

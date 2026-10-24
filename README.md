@@ -66,7 +66,6 @@ has to be turned on by hand (the health report shows "TV seen through HDMI-CEC: 
 | `update.sh` | **Remote update** to a signed version (see "Remote updates") |
 | `ColdStart/allowed_signers` | Public key that signs the versions (installed once on the Raspberry) |
 | `switch_server.sh` | Switches the Raspberry between the **production** server and the **test** server (see below) |
-| `HomeAssistant/send_sigur_fromAlexa.sh` | Answers remotely by sending `SIGUSR1` to the agent |
 
 ## Language
 
@@ -107,7 +106,7 @@ English.
 3. **Answer**, by one of these three means:
    - a **left click** on the mouse (read with `evdev`, **detected automatically**: any model,
      any USB port, found again after being unplugged);
-   - the **`SIGUSR1`** signal (`kill -USR1 <pid>`, see `HomeAssistant/`);
+   - the **`SIGUSR1`** signal (`kill -USR1 <pid>`);
    - the **Answer** button of `receveur.html` (synchronized by the server);
    - **OK on the remote control of the TV**, when the TV shows the input of the Raspberry
      (Back declines; during the call, Back hangs up).

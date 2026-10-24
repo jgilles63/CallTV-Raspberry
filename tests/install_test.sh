@@ -276,10 +276,13 @@ echo "=== 12. --update: no question, no restart of the Raspberry"
 fresh
 run '\n\n\n\nn\n' "$T/src/Raspberry_receiver/install.sh" --lang es
 sed -i 's|<openbox_config xmlns="http://openbox.org/3.4/rc">|&<keyboard><repeatRate>25</repeatRate></keyboard>|' $T/home/ofic/.config/labwc/rc.xml
+# Script of the former Home Assistant integration, removed from the project on 23/10/2026
+echo '#!/bin/bash' > $APP/send_sigur_fromAlexa.sh
 : > $T/calls.log
 APPELERMAMIE_VERSION=v0.2.0 run '' "$T/src/Raspberry_receiver/install.sh" --update
 check "update: own labwc settings kept, rule added only once, rc.xml valid" 'grep -q "<repeatRate>25</repeatRate>" $T/home/ofic/.config/labwc/rc.xml && [ "$(grep -c "identifier=\"\*ecran\*\"" $T/home/ofic/.config/labwc/rc.xml)" = 1 ] && [ "$(grep -c "mapToOutput" $T/home/ofic/.config/labwc/rc.xml)" = 1 ] && "$REALPY" -c "import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1])" "$(native $T/home/ofic/.config/labwc/rc.xml)"'
 check "update ends without error, without any answer" '[ "$(cat $T/rc.txt)" = 0 ]'
+check "update: script of the former Home Assistant integration removed, never installed again" '[ ! -e $APP/send_sigur_fromAlexa.sh ] && [ ! -e $T/src/Raspberry_receiver/HomeAssistant ]'
 check "language of the Raspberry kept without question" 'grep -q "INSTALACIÓN" $T/out.txt && grep -q "^LANGUAGE = \"es\"" $APP/config.py && ! grep -q "Langue / Language" $T/out.txt'
 check "packages unchanged: apt not run" '! grep -q "apt-get" $T/calls.log && grep -q "Paquetes sin cambios" $T/out.txt'
 check "programs restarted, the Raspberry is not" 'grep -q "systemctl restart tv-control.service chromium-autolaunch.service" $T/calls.log && ! grep -q "^reboot" $T/calls.log'

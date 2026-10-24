@@ -289,13 +289,17 @@ fi
 # config.py is handled below: it is only replaced once the previous values
 # have been put back (an interrupted run never leaves the default settings)
 for f in "$SRC_DIR"/*.py "$SRC_DIR"/*.sh "$SRC_DIR"/*.mp3 \
-         "$SRC_DIR"/ColdStart/*.py "$SRC_DIR"/ColdStart/*.sh "$SRC_DIR"/HomeAssistant/*.sh; do
+         "$SRC_DIR"/ColdStart/*.py "$SRC_DIR"/ColdStart/*.sh; do
   [ -f "$f" ] || continue
   [ "$(basename "$f")" = config.py ] && continue
   dest="$APP_DIR/$(basename "$f")"
   # The folder may already be ~/AppelerMamie itself
   [ "$f" -ef "$dest" ] || cp -p "$f" "$dest"
 done
+
+# Files no longer part of the project: script of the former Home Assistant /
+# Alexa integration (removed on 23/10/2026; SIGUSR1 still answers a call)
+rm -f "$APP_DIR/send_sigur_fromAlexa.sh"
 
 # Files copied from Windows may have Windows line endings
 sed -i 's/\r$//' "$APP_DIR"/*.py "$APP_DIR"/*.sh

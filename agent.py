@@ -25,6 +25,8 @@ Main agent:
   slider sets the volume of the radio at once; while the page is open
   (radio_watch), the level of the sound is sent every second (radio_level,
   wave drawn on the page);
+- TV in standby or not (HDMI-CEC), told to the TV page every 30 s
+  (tv_state): the page rests while nobody watches;
 - quiet hours (QUIET_START_HOUR to QUIET_END_HOUR): a call is shown on the
   TV page and can be answered, without ringtone nor announcement;
 - settings page of the TV (settings_request / settings_apply): language,
@@ -1222,6 +1224,24 @@ class TVControlAgent:
             self.kiosk_restart_pending = False
             self.restart_kiosk()
 
+    async def report_tv_state(self):
+        """
+        TV in standby or not (HDMI-CEC power status), told to the TV page at
+        each check (tv_state): the page rests while nobody watches (heat of the
+        Raspberry). On, waking up, or no CEC answer (computer monitor): watched.
+        Never during a ringing call or a call (CEC kept for the call).
+        """
+        if not self.registered or self.in_call():
+            return
+        try:
+            power = await asyncio.to_thread(tv_control.tv_power)
+        except Exception as e:
+            print(f"⚠️ TV state not read: {e}")
+            return
+        if self.in_call():
+            return
+        await self.send_message({"type": "tv_state", "watching": power not in ("standby", "to-standby")})
+
     @staticmethod
     def restart_kiosk():
         """Stops the Chromium of this user: systemd starts the kiosk again (Restart=always)."""
@@ -1347,6 +1367,8 @@ class TVControlAgent:
             await asyncio.to_thread(self.keep_screen_mode)
             # Second screen plugged or unplugged: kiosk opened again
             await asyncio.to_thread(self.check_second_screen)
+            # TV in standby or not: rest of the TV page
+            await self.report_tv_state()
             await asyncio.sleep(self.alive_interval)
 
     # ---------------------------------------------------------
